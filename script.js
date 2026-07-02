@@ -8,25 +8,81 @@
 // localStorageに保存するときのキー名(自由な名前でOK)
 const STORAGE_KEY = "internships";
 
-// 選考状況の並び順(グラフの棒やセレクトボックスの並びをこの順番にそろえる)
-const STATUS_ORDER = ["未応募", "応募済み", "書類選考中", "面接予定", "内定", "不合格", "辞退"];
+// 選考状況の並び順(グラフやセレクトボックスの並びをこの順番にそろえる)
+// 「未応募→通過/不合格/辞退」という選考の流れの順になっている
+const STATUS_ORDER = [
+  "未応募", "ES提出済み", "書類選考中", "面接予定", "面接中", "最終面接", "通過", "不合格", "辞退",
+];
 
-// 選考状況ごとの色(グラフの棒の色。カードのバッジ色はCSS側で管理)
+// 選考状況ごとの色(グラフの棒・フェーズ一覧・カードのバッジで共通利用)
 const STATUS_COLORS = {
   未応募: "#c3c2b7",
-  応募済み: "#2a78d6",
+  ES提出済み: "#2a78d6",
   書類選考中: "#eda100",
   面接予定: "#4a3aa7",
-  内定: "#0ca30c",
+  面接中: "#1baf7a",
+  最終面接: "#eb6834",
+  通過: "#0ca30c",
   不合格: "#d03b3b",
   辞退: "#898781",
 };
 
-// 「インターン内容」欄で最初から候補に出しておく、よくある職種・業務内容
-const INTERNSHIP_TYPE_PRESETS = [
-  "データ分析", "システム開発", "営業", "マーケティング", "企画",
-  "コンサルティング", "人事", "デザイン", "広報", "1day仕事体験",
+// 「インターン内容」の固定の分類(分析グラフの集計対象と一致させる)
+const INTERNSHIP_TYPE_CATEGORIES = [
+  "データ分析", "AI・機械学習", "システム開発", "Web開発", "マーケティング", "コンサル", "営業", "その他",
 ];
+
+// インターン内容ごとの色(カテゴリカラーを固定の順番で割り当てる)
+const TYPE_COLORS = {
+  データ分析: "#2a78d6",
+  "AI・機械学習": "#1baf7a",
+  システム開発: "#eda100",
+  Web開発: "#008300",
+  マーケティング: "#4a3aa7",
+  コンサル: "#e34948",
+  営業: "#e87ba4",
+  その他: "#898781",
+};
+
+// 業界別グラフで使う色(登場順に固定の色を割り当てる。9業界目以降はグレーで表示)
+const INDUSTRY_PALETTE = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834"];
+const INDUSTRY_FALLBACK_COLOR = "#898781";
+
+// ================================================
+// 過去バージョンのデータを、新しい項目・新しい選考状況名に合わせて変換する処理
+// (アプリを更新しても、これまで保存してきたデータが消えたり壊れたりしないようにするため)
+// ================================================
+
+// 以前の選考状況名 → 新しい選考状況名
+const STATUS_MIGRATION_MAP = {
+  応募済み: "ES提出済み",
+  内定: "通過",
+};
+
+// 以前の「インターン内容」の自由入力 → 新しい固定の分類
+const TYPE_MIGRATION_MAP = {
+  データ分析: "データ分析",
+  システム開発: "システム開発",
+  営業: "営業",
+  マーケティング: "マーケティング",
+  コンサルティング: "コンサル",
+};
+
+function migrateItem(item) {
+  const status = STATUS_MIGRATION_MAP[item.status] || item.status;
+  const rawType = (item.internshipType || "").trim();
+  const internshipType = INTERNSHIP_TYPE_CATEGORIES.includes(rawType)
+    ? rawType
+    : TYPE_MIGRATION_MAP[rawType] || "その他";
+
+  return {
+    ...item,
+    status,
+    internshipType,
+    infoSessionDate: item.infoSessionDate || "",
+    internshipDate: item.internshipDate || "",
+  };
+}
 
 // 現在選択されている絞り込み条件("all"のときはすべて表示)
 let currentIndustryFilter = "all";
@@ -54,10 +110,11 @@ const companyInput = document.getElementById("company");
 const industryInput = document.getElementById("industry");
 const industrySuggestions = document.getElementById("industry-suggestions");
 const internshipTypeInput = document.getElementById("internship-type");
-const typeSuggestions = document.getElementById("type-suggestions");
 const deadlineInput = document.getElementById("deadline");
 const statusInput = document.getElementById("status");
+const infoSessionDateInput = document.getElementById("info-session-date");
 const interviewDateInput = document.getElementById("interview-date");
+const internshipDateInput = document.getElementById("internship-date");
 const memoInput = document.getElementById("memo");
 
 const formTitle = document.getElementById("form-title");
@@ -72,9 +129,13 @@ const typeFilterSelect = document.getElementById("type-filter");
 const searchInput = document.getElementById("search-input");
 
 const statGrid = document.getElementById("stat-grid");
-const chartWrap = document.getElementById("status-chart");
-const chartTotal = document.getElementById("chart-total");
-const chartTooltip = document.getElementById("chart-tooltip");
+const agendaList = document.getElementById("agenda-list");
+const rankingList = document.getElementById("ranking-list");
+const phaseList = document.getElementById("phase-list");
+const phaseTotal = document.getElementById("phase-total");
+const funnelEl = document.getElementById("funnel");
+const industryBreakdownEl = document.getElementById("industry-breakdown");
+const typeBreakdownEl = document.getElementById("type-breakdown");
 
 const listContainer = document.getElementById("internship-list");
 const listCount = document.getElementById("list-count");
@@ -99,8 +160,16 @@ function loadInternships() {
     // まだ何も保存されていない場合は空の配列を返す
     return [];
   }
-  // 文字列(JSON)を配列(JavaScriptのデータ)に変換して返す
-  return JSON.parse(jsonText);
+  // 文字列(JSON)を配列(JavaScriptのデータ)に変換したうえで、
+  // 古いバージョンのデータ形式であれば新しい形式に変換する
+  const raw = JSON.parse(jsonText);
+  const migrated = raw.map(migrateItem);
+
+  // 変換によって内容が変わっていたら、保存し直しておく(次回以降は変換不要になる)
+  if (JSON.stringify(raw) !== JSON.stringify(migrated)) {
+    saveInternships(migrated);
+  }
+  return migrated;
 }
 
 // 配列を丸ごとlocalStorageに保存する関数
@@ -111,7 +180,7 @@ function saveInternships(internships) {
 
 // ================================================
 // 画面全体を再描画する入り口の関数
-// フィルターの選択肢・ダッシュボード・グラフ・一覧は、
+// フィルターの選択肢・ダッシュボードの各カード・一覧・カレンダーは、
 // すべてこの関数から呼び出して連動させる。
 // ================================================
 function renderAll() {
@@ -120,7 +189,6 @@ function renderAll() {
   renderIndustryFilterOptions(all);
   renderTypeFilterOptions(all);
   renderIndustrySuggestions(all);
-  renderTypeSuggestions(all);
 
   let filtered = filterByIndustry(all, currentIndustryFilter);
   filtered = filterByType(filtered, currentTypeFilter);
@@ -128,8 +196,13 @@ function renderAll() {
 
   lastFilteredItems = filtered;
 
+  renderAgenda(filtered);
   renderStatTiles(filtered);
-  renderStatusChart(filtered);
+  renderRanking(filtered);
+  renderPhaseList(filtered);
+  renderFunnel(filtered);
+  renderIndustryBreakdown(filtered);
+  renderTypeBreakdown(filtered);
   renderList(filtered);
   renderCalendar(filtered);
 }
@@ -143,7 +216,7 @@ function filterByIndustry(internships, industry) {
 // インターン内容フィルターの値に応じてデータを絞り込む関数
 function filterByType(internships, type) {
   if (type === "all") return internships;
-  return internships.filter((item) => (item.internshipType || "未分類") === type);
+  return internships.filter((item) => item.internshipType === type);
 }
 
 // 企業名の検索キーワードでデータを絞り込む関数(部分一致・大文字小文字を区別しない)
@@ -183,23 +256,19 @@ function renderIndustryFilterOptions(all) {
   }
 }
 
-// インターン内容フィルターの選択肢を作る(登録データ内の内容一覧から)
-function renderTypeFilterOptions(all) {
-  const types = Array.from(
-    new Set(all.map((item) => (item.internshipType || "").trim() || "未分類"))
-  ).sort((a, b) => a.localeCompare(b, "ja"));
-
+// インターン内容フィルターの選択肢を作る(固定の分類一覧から)
+function renderTypeFilterOptions() {
   const previousValue = typeFilterSelect.value || currentTypeFilter;
 
   typeFilterSelect.innerHTML = '<option value="all">すべての内容</option>';
-  types.forEach((type) => {
+  INTERNSHIP_TYPE_CATEGORIES.forEach((type) => {
     const option = document.createElement("option");
     option.value = type;
     option.textContent = type;
     typeFilterSelect.appendChild(option);
   });
 
-  if (types.includes(previousValue) || previousValue === "all") {
+  if (INTERNSHIP_TYPE_CATEGORIES.includes(previousValue) || previousValue === "all") {
     typeFilterSelect.value = previousValue;
     currentTypeFilter = previousValue;
   } else {
@@ -218,18 +287,6 @@ function renderIndustrySuggestions(all) {
     const option = document.createElement("option");
     option.value = industry;
     industrySuggestions.appendChild(option);
-  });
-}
-
-// 入力フォームの「インターン内容」欄の候補を作る(あらかじめ用意した候補 + 過去の入力)
-function renderTypeSuggestions(all) {
-  const pastTypes = all.map((item) => (item.internshipType || "").trim()).filter(Boolean);
-  const types = Array.from(new Set([...INTERNSHIP_TYPE_PRESETS, ...pastTypes]));
-  typeSuggestions.innerHTML = "";
-  types.forEach((type) => {
-    const option = document.createElement("option");
-    option.value = type;
-    typeSuggestions.appendChild(option);
   });
 }
 
@@ -259,7 +316,7 @@ function getToday() {
   return today;
 }
 
-// 締切日と今日の差(日数)を計算する。マイナスなら締切を過ぎている
+// 対象の日付と今日の差(日数)を計算する。マイナスなら過ぎている
 function getDaysUntil(dateString) {
   if (!dateString) return null;
   const target = new Date(dateString);
@@ -276,6 +333,82 @@ function formatDaysLabel(days) {
   return `あと${days}日`;
 }
 
+// 残り日数に応じて、危険度を表すクラス名を返す関数(赤=締切超過/1日以内、オレンジ=3日以内)
+function urgencyClass(days) {
+  if (days === null) return "";
+  if (days <= 1) return "urgent-critical";
+  if (days <= 3) return "urgent-warning";
+  return "";
+}
+
+// ================================================
+// ①今週の予定(ES締切・説明会・面接・インターン参加を日付順にまとめて表示)
+// ================================================
+const AGENDA_KIND_LABELS = {
+  deadline: "ES締切",
+  infoSession: "説明会",
+  interview: "面接",
+  internshipDate: "インターン参加",
+};
+const AGENDA_KIND_COLORS = {
+  deadline: "#4a3aa7",
+  infoSession: "#1baf7a",
+  interview: "#2a78d6",
+  internshipDate: "#eb6834",
+};
+
+function renderAgenda(items) {
+  const entries = [];
+  items.forEach((item) => {
+    [
+      ["deadline", item.deadline],
+      ["infoSession", item.infoSessionDate],
+      ["interview", item.interviewDate],
+      ["internshipDate", item.internshipDate],
+    ].forEach(([kind, dateString]) => {
+      const days = getDaysUntil(dateString);
+      if (days !== null && days >= 0 && days <= 7) {
+        entries.push({ kind, dateString, days, item });
+      }
+    });
+  });
+
+  entries.sort((a, b) => new Date(a.dateString) - new Date(b.dateString));
+
+  agendaList.innerHTML = "";
+
+  if (entries.length === 0) {
+    agendaList.innerHTML = '<p class="dashboard-empty">今週の予定はありません</p>';
+    return;
+  }
+
+  entries.forEach(({ kind, days, item }) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "agenda-row";
+
+    const dayBadge = document.createElement("span");
+    dayBadge.className = `agenda-day-badge ${urgencyClass(days)}`;
+    dayBadge.textContent = formatDaysLabel(days);
+
+    const kindBadge = document.createElement("span");
+    kindBadge.className = "agenda-kind-badge";
+    kindBadge.style.color = AGENDA_KIND_COLORS[kind];
+    kindBadge.textContent = AGENDA_KIND_LABELS[kind];
+
+    const companyLabel = document.createElement("span");
+    companyLabel.className = "agenda-company";
+    companyLabel.textContent = item.company;
+
+    row.appendChild(dayBadge);
+    row.appendChild(kindBadge);
+    row.appendChild(companyLabel);
+    row.addEventListener("click", () => startEdit(item.id));
+
+    agendaList.appendChild(row);
+  });
+}
+
 // ================================================
 // ダッシュボード(統計タイル)の描画
 // ================================================
@@ -283,22 +416,19 @@ function renderStatTiles(items) {
   const total = items.length;
 
   // ES(書類選考)通過率
-  // 分子: 書類選考を通過して「面接予定」または「内定」まで進んだ件数
-  // 分母: 書類選考の結果が出た件数(面接予定+内定+不合格)。まだ結果待ちの案件は含めない
-  const esPassed = items.filter((i) => i.status === "面接予定" || i.status === "内定").length;
-  const esDecided = items.filter((i) =>
-    ["面接予定", "内定", "不合格"].includes(i.status)
+  // 分子: 書類選考を通過して面接以降に進んだ件数
+  // 分母: 書類選考の結果が出た件数(面接以降+不合格)。まだ結果待ちの案件は含めない
+  const screeningPassed = items.filter((i) =>
+    ["面接予定", "面接中", "最終面接", "通過"].includes(i.status)
   ).length;
-  const esRate = esDecided === 0 ? null : Math.round((esPassed / esDecided) * 100);
+  const esDecided = screeningPassed + items.filter((i) => i.status === "不合格").length;
+  const esRate = esDecided === 0 ? null : Math.round((screeningPassed / esDecided) * 100);
 
   const inProgressCount = items.filter((i) =>
-    ["書類選考中", "面接予定"].includes(i.status)
+    ["書類選考中", "面接予定", "面接中", "最終面接"].includes(i.status)
   ).length;
 
-  // 直近の締切(まだ来ていない締切の中で、いちばん近いもの)
-  const upcoming = items
-    .filter((i) => getDaysUntil(i.deadline) !== null && getDaysUntil(i.deadline) >= 0)
-    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))[0];
+  const finalPassCount = items.filter((i) => i.status === "通過").length;
 
   const tiles = [
     {
@@ -309,24 +439,19 @@ function renderStatTiles(items) {
     {
       label: "選考中",
       value: `${inProgressCount}件`,
-      caption: "書類選考中・面接予定の合計",
+      caption: "書類選考〜最終面接の合計",
     },
     {
       label: "ES通過率",
       value: esRate === null ? "ー" : `${esRate}%`,
-      caption: esDecided === 0 ? "結果が出た応募がまだありません" : `${esPassed}/${esDecided}件 通過`,
-      help: "ES通過率 = (面接予定+内定) ÷ (面接予定+内定+不合格)",
+      caption: esDecided === 0 ? "結果が出た応募がまだありません" : `${screeningPassed}/${esDecided}件 通過`,
+      help: "ES通過率 = (面接予定+面接中+最終面接+通過) ÷ (面接予定+面接中+最終面接+通過+不合格)",
     },
     {
       label: "通過",
-      value: `${esPassed}件`,
-      caption: "面接予定・内定の合計",
-      help: "通過数 = 書類選考を通過して面接予定または内定になった件数",
-    },
-    {
-      label: "直近の締切",
-      value: upcoming ? formatDaysLabel(getDaysUntil(upcoming.deadline)) : "ー",
-      caption: upcoming ? upcoming.company : "予定されている締切はありません",
+      value: `${finalPassCount}件`,
+      caption: "最終的に通過した件数",
+      help: "選考プロセスをすべて通過した件数",
     },
   ];
 
@@ -365,137 +490,181 @@ function renderStatTiles(items) {
 }
 
 // ================================================
-// 選考状況別の件数グラフ(SVGを使った自作の棒グラフ)
+// ③応募企業ランキング(締切が近い順トップ5)
 // ================================================
-function renderStatusChart(items) {
-  chartTotal.textContent = `合計 ${items.length}件`;
+function renderRanking(items) {
+  const upcoming = items
+    .map((item) => ({ item, days: getDaysUntil(item.deadline) }))
+    .filter(({ days }) => days !== null && days >= 0)
+    .sort((a, b) => a.days - b.days)
+    .slice(0, 5);
 
-  // 選考状況ごとの件数を数える
-  const counts = STATUS_ORDER.map((status) => ({
-    status,
-    count: items.filter((i) => i.status === status).length,
-  }));
+  rankingList.innerHTML = "";
 
-  if (items.length === 0) {
-    chartWrap.innerHTML = '<p class="chart-empty">表示できるデータがありません</p>';
+  if (upcoming.length === 0) {
+    rankingList.innerHTML = '<p class="dashboard-empty">締切が近い応募はありません</p>';
     return;
   }
 
-  // ---- SVGのレイアウトを計算する ----
-  const width = 700;
-  const height = 220;
-  const paddingLeft = 34;
-  const paddingRight = 10;
-  const paddingTop = 24;
-  const paddingBottom = 34;
-  const plotWidth = width - paddingLeft - paddingRight;
-  const plotHeight = height - paddingTop - paddingBottom;
-  const baselineY = paddingTop + plotHeight;
+  upcoming.forEach(({ item, days }, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `ranking-row ${urgencyClass(days)}`;
 
-  const maxCount = Math.max(...counts.map((c) => c.count));
-  // 目盛りの最大値をきりのいい数字にする(0件だけの場合でも1目盛り分の高さを確保する)
-  const niceMax = maxCount === 0 ? 1 : maxCount;
-  const midValue = Math.round(niceMax / 2);
+    const rankEl = document.createElement("span");
+    rankEl.className = "ranking-rank";
+    rankEl.textContent = index + 1;
 
-  const slotWidth = plotWidth / counts.length;
-  const barWidth = Math.min(24, slotWidth * 0.5);
-  const radius = 4;
+    const dayBadge = document.createElement("span");
+    dayBadge.className = "ranking-day-badge";
+    dayBadge.textContent = formatDaysLabel(days);
 
-  // ---- 目盛り線(0 / 中間 / 最大)を描く。値が小さく中間目盛りが0や最大と重なる場合は省略する ----
-  const gridValues = [0, midValue, niceMax].filter(
-    (value, index, self) => self.indexOf(value) === index
-  );
-  const gridLinesSvg = gridValues
-    .map((value) => {
-      const y = baselineY - plotHeight * (value / niceMax);
-      return `
-        <line class="chart-gridline" x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}"></line>
-        <text class="chart-axis-label" x="${paddingLeft - 8}" y="${y + 4}" text-anchor="end">${value}</text>
-      `;
-    })
-    .join("");
+    const companyLabel = document.createElement("span");
+    companyLabel.className = "ranking-company";
+    companyLabel.textContent = item.company;
 
-  // ---- 棒グラフ本体を描く ----
-  const barsSvg = counts
-    .map((item, index) => {
-      const slotX = paddingLeft + index * slotWidth;
-      const barX = slotX + (slotWidth - barWidth) / 2;
-      const barHeight = (item.count / niceMax) * plotHeight;
-      const barY = baselineY - barHeight;
-      const r = Math.min(radius, barWidth / 2, barHeight);
+    row.appendChild(rankEl);
+    row.appendChild(dayBadge);
+    row.appendChild(companyLabel);
+    row.addEventListener("click", () => startEdit(item.id));
 
-      // 棒の形(上だけ角丸、下は直角にする)。0件の場合は棒自体を描かない
-      const path =
-        barHeight > 0
-          ? `M${barX},${baselineY}
-             L${barX},${barY + r}
-             Q${barX},${barY} ${barX + r},${barY}
-             L${barX + barWidth - r},${barY}
-             Q${barX + barWidth},${barY} ${barX + barWidth},${barY + r}
-             L${barX + barWidth},${baselineY} Z`
-          : "";
-
-      const color = STATUS_COLORS[item.status] || "#c3c2b7";
-      const labelX = slotX + slotWidth / 2;
-
-      return `
-        <g class="bar-group" tabindex="0" data-status="${escapeHtml(item.status)}" data-count="${item.count}">
-          <!-- クリック/ホバー判定を広くするための透明な当たり判定エリア -->
-          <rect class="bar-hit" x="${slotX}" y="${paddingTop}" width="${slotWidth}" height="${plotHeight}"></rect>
-          ${path ? `<path class="bar-shape" d="${path}" fill="${color}"></path>` : ""}
-          <text class="chart-value-label" x="${labelX}" y="${barY - 6}" text-anchor="middle">${item.count}</text>
-          <text class="chart-axis-label" x="${labelX}" y="${baselineY + 16}" text-anchor="middle">${escapeHtml(item.status)}</text>
-        </g>
-      `;
-    })
-    .join("");
-
-  chartWrap.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="選考状況別の件数グラフ">
-      <line class="chart-baseline" x1="${paddingLeft}" y1="${baselineY}" x2="${width - paddingRight}" y2="${baselineY}"></line>
-      ${gridLinesSvg}
-      ${barsSvg}
-    </svg>
-  `;
-
-  // ---- 棒にカーソルを合わせた/フォーカスした時にツールチップを出す ----
-  chartWrap.querySelectorAll(".bar-group").forEach((group) => {
-    const show = (event) => {
-      const status = group.dataset.status;
-      const count = group.dataset.count;
-      chartTooltip.innerHTML = "";
-      const strong = document.createElement("strong");
-      strong.textContent = `${count}件`;
-      chartTooltip.appendChild(strong);
-      chartTooltip.appendChild(document.createTextNode(` ${status}`));
-      chartTooltip.hidden = false;
-
-      const point = "clientX" in event ? event : group.getBoundingClientRect();
-      const x = "clientX" in event ? event.clientX : point.left + point.width / 2;
-      const y = "clientY" in event ? event.clientY : point.top;
-      chartTooltip.style.left = `${x}px`;
-      chartTooltip.style.top = `${y}px`;
-    };
-    const hide = () => {
-      chartTooltip.hidden = true;
-    };
-
-    group.addEventListener("pointermove", show);
-    group.addEventListener("pointerenter", show);
-    group.addEventListener("pointerleave", hide);
-    group.addEventListener("focus", show);
-    group.addEventListener("blur", hide);
+    rankingList.appendChild(row);
   });
 }
 
-// スマホなどのタッチ操作では「カーソルが離れる(pointerleave)」がマウスのようには発生せず、
-// 棒をタップしたあとツールチップが消えずに残ってしまうことがある。
-// そのため、棒グラフ以外の場所をタップ/クリックしたときは、必ずツールチップを閉じるようにする。
-document.addEventListener("pointerdown", (event) => {
-  if (!event.target.closest(".bar-group")) {
-    chartTooltip.hidden = true;
+// ================================================
+// 共通: ラベル・件数・割合・色を横棒で表示する部品
+// (④選考フェーズ一覧 / ②業界別応募数 / ⑤インターン内容の分析 で共通利用)
+// ================================================
+function renderBarListInto(container, rows, total) {
+  container.innerHTML = "";
+
+  if (total === 0) {
+    container.innerHTML = '<p class="dashboard-empty">表示できるデータがありません</p>';
+    return;
   }
-});
+
+  rows.forEach(({ label, count, color }) => {
+    const percent = total === 0 ? 0 : Math.round((count / total) * 100);
+
+    const row = document.createElement("div");
+    row.className = "hbar-row";
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "hbar-label";
+    labelEl.textContent = label;
+
+    const track = document.createElement("div");
+    track.className = "hbar-track";
+    const fill = document.createElement("div");
+    fill.className = "hbar-fill";
+    fill.style.width = `${percent}%`;
+    fill.style.backgroundColor = color;
+    track.appendChild(fill);
+
+    const valueEl = document.createElement("div");
+    valueEl.className = "hbar-value";
+    valueEl.textContent = `${count}件(${percent}%)`;
+
+    row.appendChild(labelEl);
+    row.appendChild(track);
+    row.appendChild(valueEl);
+    container.appendChild(row);
+  });
+}
+
+// ④選考フェーズ一覧
+function renderPhaseList(items) {
+  phaseTotal.textContent = `合計 ${items.length}件`;
+  const rows = STATUS_ORDER.map((status) => ({
+    label: status,
+    count: items.filter((i) => i.status === status).length,
+    color: STATUS_COLORS[status],
+  }));
+  renderBarListInto(phaseList, rows, items.length);
+}
+
+// ②業界別応募数
+function renderIndustryBreakdown(items) {
+  const counts = new Map();
+  items.forEach((item) => {
+    const industry = (item.industry || "").trim() || "未分類";
+    counts.set(industry, (counts.get(industry) || 0) + 1);
+  });
+
+  const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  const rows = sorted.map(([industry, count], index) => ({
+    label: industry,
+    count,
+    color: INDUSTRY_PALETTE[index] || INDUSTRY_FALLBACK_COLOR,
+  }));
+
+  renderBarListInto(industryBreakdownEl, rows, items.length);
+}
+
+// ⑤応募したインターンの種類の分析
+function renderTypeBreakdown(items) {
+  const rows = INTERNSHIP_TYPE_CATEGORIES.map((type) => ({
+    label: type,
+    count: items.filter((i) => i.internshipType === type).length,
+    color: TYPE_COLORS[type],
+  }));
+  renderBarListInto(typeBreakdownEl, rows, items.length);
+}
+
+// ================================================
+// ⑥選考ファネル(応募予定→通過までの人数の推移と、各段階の通過率)
+// ================================================
+function renderFunnel(items) {
+  const total = items.length;
+  const stages = [
+    { label: "応募予定", count: total },
+    { label: "ES提出", count: items.filter((i) => i.status !== "未応募").length },
+    { label: "書類通過", count: items.filter((i) => ["面接予定", "面接中", "最終面接", "通過"].includes(i.status)).length },
+    { label: "面接", count: items.filter((i) => ["面接中", "最終面接", "通過"].includes(i.status)).length },
+    { label: "最終面接", count: items.filter((i) => ["最終面接", "通過"].includes(i.status)).length },
+    { label: "通過", count: items.filter((i) => i.status === "通過").length },
+  ];
+
+  funnelEl.innerHTML = "";
+
+  if (total === 0) {
+    funnelEl.innerHTML = '<p class="dashboard-empty">表示できるデータがありません</p>';
+    return;
+  }
+
+  const maxCount = stages[0].count || 1;
+
+  stages.forEach((stage, index) => {
+    if (index > 0) {
+      const prevCount = stages[index - 1].count;
+      const rate = prevCount === 0 ? null : Math.round((stage.count / prevCount) * 100);
+      const rateEl = document.createElement("div");
+      rateEl.className = "funnel-rate";
+      rateEl.textContent = rate === null ? "↓" : `↓ 通過率 ${rate}%`;
+      funnelEl.appendChild(rateEl);
+    }
+
+    const widthPercent = Math.max((stage.count / maxCount) * 100, stage.count > 0 ? 14 : 6);
+
+    const bar = document.createElement("div");
+    bar.className = "funnel-bar";
+    bar.style.width = `${widthPercent}%`;
+    bar.style.backgroundColor = STATUS_COLORS[stage.label] || "var(--accent)";
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "funnel-bar-label";
+    labelEl.textContent = stage.label;
+
+    const countEl = document.createElement("span");
+    countEl.className = "funnel-bar-count";
+    countEl.textContent = `${stage.count}社`;
+
+    bar.appendChild(labelEl);
+    bar.appendChild(countEl);
+    funnelEl.appendChild(bar);
+  });
+}
 
 // ================================================
 // 一覧表示に関する関数
@@ -551,7 +720,9 @@ function createCard(item) {
       <div class="row"><span class="label">業界</span><span>${escapeHtml(item.industry) || "未入力"}</span></div>
       <div class="row"><span class="label">内容</span><span>${escapeHtml(item.internshipType) || "未入力"}</span></div>
       <div class="row"><span class="label">応募締切</span><span>${formatDate(item.deadline)} <span class="deadline-pill ${pillClass}">${formatDaysLabel(days)}</span></span></div>
+      <div class="row"><span class="label">説明会</span><span>${item.infoSessionDate ? formatDate(item.infoSessionDate) : "未定"}</span></div>
       <div class="row"><span class="label">面接日</span><span>${item.interviewDate ? formatDate(item.interviewDate) : "未定"}</span></div>
+      <div class="row"><span class="label">参加日</span><span>${item.internshipDate ? formatDate(item.internshipDate) : "未定"}</span></div>
       ${item.memo ? `<div class="card-memo">${escapeHtml(item.memo)}</div>` : ""}
     </div>
     <div class="card-actions">
@@ -611,7 +782,7 @@ viewTabs.forEach((tab) => {
 
 // ================================================
 // カレンダー表示
-// 応募締切・面接日を月ごとのマス目の上に表示し、
+// 応募締切・説明会・面接日・インターン参加日を月ごとのマス目の上に表示し、
 // 締切が近い予定は目立つ色にする。
 // ================================================
 
@@ -622,13 +793,20 @@ function toDateKey(year, month, day) {
   return `${year}-${mm}-${dd}`;
 }
 
+const CALENDAR_KIND_LABELS = {
+  deadline: "締切",
+  infoSession: "説明会",
+  interview: "面接",
+  internshipDate: "参加",
+};
+
 function renderCalendar(items) {
   const year = calendarMonth.getFullYear();
   const month = calendarMonth.getMonth(); // 0始まり(0=1月)
 
   calendarMonthLabel.textContent = `${year}年${month + 1}月`;
 
-  // 日付(YYYY-MM-DD文字列)ごとに、その日が締切/面接日になっている案件をまとめておく
+  // 日付(YYYY-MM-DD文字列)ごとに、その日が締切/説明会/面接/参加日になっている案件をまとめておく
   const eventsByDate = new Map();
   const addEvent = (dateKey, item, kind) => {
     if (!dateKey) return;
@@ -637,7 +815,9 @@ function renderCalendar(items) {
   };
   items.forEach((item) => {
     addEvent(item.deadline, item, "deadline");
+    if (item.infoSessionDate) addEvent(item.infoSessionDate, item, "infoSession");
     if (item.interviewDate) addEvent(item.interviewDate, item, "interview");
+    if (item.internshipDate) addEvent(item.internshipDate, item, "internshipDate");
   });
 
   // その月を含む週の日曜日から、6週間分(42マス)のカレンダーを作る
@@ -689,8 +869,8 @@ function renderCalendar(items) {
       const days = kind === "deadline" ? getDaysUntil(item.deadline) : null;
       const isSoon = kind === "deadline" && days !== null && days <= 3;
       chip.className = `calendar-chip ${kind}` + (isSoon ? " soon" : "");
-      chip.textContent = `${kind === "deadline" ? "締切" : "面接"} ${item.company}`;
-      chip.title = `${item.company}(${kind === "deadline" ? "応募締切" : "面接日"})`;
+      chip.textContent = `${CALENDAR_KIND_LABELS[kind]} ${item.company}`;
+      chip.title = `${item.company}(${CALENDAR_KIND_LABELS[kind]})`;
       chip.addEventListener("click", () => startEdit(item.id));
       cellEl.appendChild(chip);
     });
@@ -750,10 +930,12 @@ form.addEventListener("submit", (event) => {
   const formData = {
     company: companyInput.value.trim(),
     industry: industryInput.value.trim(),
-    internshipType: internshipTypeInput.value.trim(),
+    internshipType: internshipTypeInput.value,
     deadline: deadlineInput.value,
     status: statusInput.value,
+    infoSessionDate: infoSessionDateInput.value,
     interviewDate: interviewDateInput.value,
+    internshipDate: internshipDateInput.value,
     memo: memoInput.value.trim(),
   };
 
@@ -787,10 +969,12 @@ function startEdit(id) {
   editIdInput.value = item.id;
   companyInput.value = item.company;
   industryInput.value = item.industry;
-  internshipTypeInput.value = item.internshipType || "";
+  internshipTypeInput.value = item.internshipType;
   deadlineInput.value = item.deadline;
   statusInput.value = item.status;
+  infoSessionDateInput.value = item.infoSessionDate;
   interviewDateInput.value = item.interviewDate;
+  internshipDateInput.value = item.internshipDate;
   memoInput.value = item.memo;
 
   // フォームの見た目を「編集モード」に切り替える

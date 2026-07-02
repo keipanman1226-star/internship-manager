@@ -59,16 +59,60 @@
       <section class="dashboard">
         <h2 class="section-title">ダッシュボード</h2>
 
+        <!-- ①今週の予定: ES締切・説明会・面接・インターン参加を日付順にまとめて表示 -->
+        <div class="dashboard-card" id="agenda-card">
+          <div class="dashboard-card-header">
+            <h3 class="dashboard-card-title">今週の予定</h3>
+            <span class="dashboard-card-subtitle">今日から7日以内</span>
+          </div>
+          <div id="agenda-list"></div>
+        </div>
+
         <!-- 統計タイル(件数やES通過率などをひと目で見られるカード) -->
         <div class="stat-grid" id="stat-grid"></div>
 
-        <!-- 選考状況別の件数グラフ(SVGで自作した棒グラフ) -->
-        <div class="chart-card">
-          <div class="chart-card-header">
-            <h3 class="chart-title">選考状況別の件数</h3>
-            <span class="chart-subtitle" id="chart-total"></span>
+        <!-- ③応募企業ランキング: 締切が近い順トップ5 -->
+        <div class="dashboard-card" id="ranking-card">
+          <div class="dashboard-card-header">
+            <h3 class="dashboard-card-title">締切が近い順ランキング</h3>
           </div>
-          <div class="chart-wrap" id="status-chart"></div>
+          <div id="ranking-list"></div>
+        </div>
+
+        <!-- ④選考フェーズ一覧: 件数と割合 -->
+        <div class="dashboard-card" id="phase-card">
+          <div class="dashboard-card-header">
+            <h3 class="dashboard-card-title">選考フェーズ一覧</h3>
+            <span class="dashboard-card-subtitle" id="phase-total"></span>
+          </div>
+          <div id="phase-list"></div>
+        </div>
+
+        <!-- ⑥進捗ファネル: 応募予定から通過までの段階別人数と通過率 -->
+        <div class="dashboard-card" id="funnel-card">
+          <div class="dashboard-card-header">
+            <h3 class="dashboard-card-title">選考ファネル</h3>
+            <span class="dashboard-card-subtitle">各段階の通過率</span>
+          </div>
+          <div id="funnel"></div>
+        </div>
+
+        <div class="dashboard-grid-2col">
+          <!-- ②業界別応募数: 件数と割合 -->
+          <div class="dashboard-card" id="industry-breakdown-card">
+            <div class="dashboard-card-header">
+              <h3 class="dashboard-card-title">業界別応募数</h3>
+            </div>
+            <div id="industry-breakdown"></div>
+          </div>
+
+          <!-- ⑤応募したインターンの種類: 分野別の分析 -->
+          <div class="dashboard-card" id="type-breakdown-card">
+            <div class="dashboard-card-header">
+              <h3 class="dashboard-card-title">インターン内容の分析</h3>
+            </div>
+            <div id="type-breakdown"></div>
+          </div>
         </div>
       </section>
 
@@ -103,7 +147,9 @@
             <div id="calendar-grid" class="calendar-grid"></div>
             <div class="calendar-legend">
               <span class="legend-item"><span class="legend-dot deadline"></span>応募締切</span>
+              <span class="legend-item"><span class="legend-dot info-session"></span>説明会</span>
               <span class="legend-item"><span class="legend-dot interview"></span>面接日</span>
+              <span class="legend-item"><span class="legend-dot internship-date"></span>参加日</span>
               <span class="legend-item"><span class="legend-dot soon"></span>締切間近(3日以内)</span>
             </div>
           </div>
@@ -139,8 +185,16 @@
 
           <div class="form-row">
             <label for="internship-type">インターン内容</label>
-            <input type="text" id="internship-type" placeholder="例）データ分析" list="type-suggestions">
-            <datalist id="type-suggestions"></datalist>
+            <select id="internship-type">
+              <option value="データ分析">データ分析</option>
+              <option value="AI・機械学習">AI・機械学習</option>
+              <option value="システム開発">システム開発</option>
+              <option value="Web開発">Web開発</option>
+              <option value="マーケティング">マーケティング</option>
+              <option value="コンサル">コンサル</option>
+              <option value="営業">営業</option>
+              <option value="その他">その他</option>
+            </select>
           </div>
         </div>
 
@@ -149,24 +203,38 @@
             <label for="status">選考状況</label>
             <select id="status">
               <option value="未応募">未応募</option>
-              <option value="応募済み">応募済み</option>
+              <option value="ES提出済み">ES提出済み</option>
               <option value="書類選考中">書類選考中</option>
               <option value="面接予定">面接予定</option>
-              <option value="内定">内定</option>
+              <option value="面接中">面接中</option>
+              <option value="最終面接">最終面接</option>
+              <option value="通過">通過</option>
               <option value="不合格">不合格</option>
               <option value="辞退">辞退</option>
             </select>
           </div>
 
           <div class="form-row">
-            <label for="deadline">応募締切</label>
+            <label for="deadline">応募(ES)締切</label>
             <input type="date" id="deadline" required>
           </div>
         </div>
 
+        <div class="form-row-group">
+          <div class="form-row">
+            <label for="info-session-date">説明会日</label>
+            <input type="date" id="info-session-date">
+          </div>
+
+          <div class="form-row">
+            <label for="interview-date">面接日</label>
+            <input type="date" id="interview-date">
+          </div>
+        </div>
+
         <div class="form-row">
-          <label for="interview-date">面接日</label>
-          <input type="date" id="interview-date">
+          <label for="internship-date">インターン参加日</label>
+          <input type="date" id="internship-date">
         </div>
 
         <div class="form-row">
@@ -181,9 +249,6 @@
       </div>
     </form>
   </dialog>
-
-  <!-- グラフの棒/カレンダーの予定にカーソルを合わせたときに出るツールチップ -->
-  <div id="chart-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
 
   <!-- 実際の動き(JavaScript)を読み込む。bodyの最後に書くことでHTMLの読み込みを妨げない -->
   <script src="script.js"></script>

@@ -25,12 +25,14 @@
   --accent-hover: #3d2f8c;
   --accent-wash: rgba(74, 58, 167, 0.08);
 
-  /* 選考状況ごとの色(グラフの棒・バッジ両方で共通利用) */
+  /* 選考状況ごとの色(グラフ・フェーズ一覧・バッジで共通利用) */
   --status-未応募: #c3c2b7;
-  --status-応募済み: #2a78d6;
+  --status-ES提出済み: #2a78d6;
   --status-書類選考中: #eda100;
   --status-面接予定: #4a3aa7;
-  --status-内定: #0ca30c;
+  --status-面接中: #1baf7a;
+  --status-最終面接: #eb6834;
+  --status-通過: #0ca30c;
   --status-不合格: #d03b3b;
   --status-辞退: #898781;
 
@@ -287,113 +289,251 @@ textarea:focus {
   cursor: help;
 }
 
-/* ---- グラフカード ---- */
-.chart-card {
+/* ---- ダッシュボードの各カード共通の見た目(カードサイズ・余白を統一する) ---- */
+.dashboard-card {
   background-color: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 18px 20px;
   box-shadow: var(--shadow-sm);
+  margin-bottom: 16px;
 }
 
-.chart-card-header {
+.dashboard-card-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
+  gap: 8px;
 }
 
-.chart-title {
+.dashboard-card-title {
   font-size: 0.9rem;
   font-weight: 600;
   margin: 0;
   color: var(--text-primary);
 }
 
-.chart-subtitle {
+.dashboard-card-subtitle {
   font-size: 0.78rem;
   color: var(--text-muted);
-}
-
-.chart-wrap {
-  position: relative;
-  width: 100%;
-}
-
-.chart-wrap svg {
-  width: 100%;
-  height: auto;
-  display: block;
-  overflow: visible;
-}
-
-.bar-hit {
-  fill: transparent;
-  cursor: pointer;
-}
-
-.bar-shape {
-  transition: opacity 0.1s ease;
-}
-
-.bar-group:hover .bar-shape,
-.bar-group:focus .bar-shape {
-  opacity: 0.75;
-}
-
-.bar-group:focus {
-  outline: none;
-}
-
-.bar-group:focus .bar-hit {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.chart-axis-label {
-  fill: var(--text-muted);
-  font-size: 11px;
-}
-
-.chart-value-label {
-  fill: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.chart-gridline {
-  stroke: var(--gridline);
-  stroke-width: 1;
-}
-
-.chart-baseline {
-  stroke: #c3c2b7;
-  stroke-width: 1;
-}
-
-.chart-tooltip {
-  position: fixed;
-  z-index: 100;
-  background-color: var(--text-primary);
-  color: #fff;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  pointer-events: none;
-  transform: translate(-50%, calc(-100% - 10px));
   white-space: nowrap;
-  box-shadow: var(--shadow-md);
 }
 
-.chart-tooltip strong {
-  font-weight: 700;
-}
-
-.chart-empty {
+.dashboard-empty {
   color: var(--text-muted);
   font-size: 0.85rem;
   text-align: center;
-  padding: 24px 0;
+  padding: 20px 0;
+  margin: 0;
+}
+
+/* 2カラムで並べるカード(業界別・インターン内容分析)。スマホでは1列に積む */
+.dashboard-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dashboard-grid-2col .dashboard-card {
+  margin-bottom: 0;
+}
+
+/* ---- ①今週の予定 ---- */
+.agenda-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 6px;
+  border: none;
+  border-bottom: 1px solid var(--gridline);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.86rem;
+}
+
+.agenda-row:last-child {
+  border-bottom: none;
+}
+
+.agenda-row:hover {
+  background-color: var(--surface-hover);
+}
+
+.agenda-day-badge {
+  flex-shrink: 0;
+  min-width: 4.5em;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background-color: var(--gridline);
+  color: var(--text-secondary);
+}
+
+.agenda-kind-badge {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.agenda-company {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 締切・予定が近いことを示す警告色(赤=1日以内、オレンジ=3日以内) */
+.urgent-critical {
+  background-color: var(--danger-bg) !important;
+  color: var(--danger-text) !important;
+}
+
+.urgent-warning {
+  background-color: var(--warning-bg) !important;
+  color: var(--warning-text) !important;
+}
+
+/* ---- ③応募企業ランキング ---- */
+.ranking-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 6px;
+  border: none;
+  border-bottom: 1px solid var(--gridline);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ranking-row:last-child {
+  border-bottom: none;
+}
+
+.ranking-row:hover {
+  background-color: var(--surface-hover);
+}
+
+.ranking-rank {
+  flex-shrink: 0;
+  width: 1.6em;
+  height: 1.6em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: var(--gridline);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ranking-day-badge {
+  flex-shrink: 0;
+  min-width: 4.5em;
+  text-align: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background-color: var(--gridline);
+  color: var(--text-secondary);
+}
+
+.ranking-company {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 締切が近いランキング行を目立たせる */
+.ranking-row.urgent-warning {
+  background-color: var(--warning-bg);
+}
+.ranking-row.urgent-critical {
+  background-color: var(--danger-bg);
+}
+.ranking-row.urgent-warning .ranking-day-badge {
+  background-color: var(--warning-text);
+  color: #fff;
+}
+.ranking-row.urgent-critical .ranking-day-badge {
+  background-color: var(--danger);
+  color: #fff;
+}
+
+/* ---- 横棒リスト共通部品(④選考フェーズ一覧 / ②業界別応募数 / ⑤インターン内容の分析) ---- */
+.hbar-row {
+  display: grid;
+  grid-template-columns: 6.5em 1fr 5.5em;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 0.8rem;
+}
+
+.hbar-label {
+  color: var(--text-secondary);
+  line-height: 1.25;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.hbar-track {
+  height: 10px;
+  border-radius: 999px;
+  background-color: var(--gridline);
+  overflow: hidden;
+}
+
+.hbar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.hbar-value {
+  text-align: right;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- ⑥選考ファネル ---- */
+#funnel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.funnel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 40%;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.funnel-rate {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 2px 0;
 }
 
 /* ================================================================
@@ -507,10 +647,12 @@ textarea:focus {
 
 /* 選考状況ごとにバッジの文字色を変える(背景は薄いトーンで統一し、Notionのタグ風に) */
 .status-未応募 { color: var(--status-未応募); background-color: #f1f1ef; }
-.status-応募済み { color: var(--status-応募済み); background-color: #eaf2fc; }
+.status-ES提出済み { color: var(--status-ES提出済み); background-color: #eaf2fc; }
 .status-書類選考中 { color: var(--status-書類選考中); background-color: #fdf1dc; }
 .status-面接予定 { color: var(--status-面接予定); background-color: #ece9f7; }
-.status-内定 { color: var(--status-内定); background-color: #e6f6e6; }
+.status-面接中 { color: var(--status-面接中); background-color: #e2f5ee; }
+.status-最終面接 { color: var(--status-最終面接); background-color: #fce7dc; }
+.status-通過 { color: var(--status-通過); background-color: #e6f6e6; }
 .status-不合格 { color: var(--status-不合格); background-color: #fbeaea; }
 .status-辞退 { color: var(--status-辞退); background-color: #f1f1ef; }
 
@@ -688,9 +830,21 @@ textarea:focus {
   color: var(--accent);
 }
 
+.calendar-chip.info-session,
+.calendar-chip.infoSession {
+  background-color: #e2f5ee;
+  color: var(--status-面接中);
+}
+
 .calendar-chip.interview {
   background-color: #eaf2fc;
-  color: var(--status-応募済み);
+  color: var(--status-ES提出済み);
+}
+
+.calendar-chip.internship-date,
+.calendar-chip.internshipDate {
+  background-color: #fce7dc;
+  color: var(--status-最終面接);
 }
 
 .calendar-chip.soon {
@@ -728,7 +882,9 @@ textarea:focus {
 }
 
 .legend-dot.deadline { background-color: var(--accent); }
-.legend-dot.interview { background-color: var(--status-応募済み); }
+.legend-dot.info-session { background-color: var(--status-面接中); }
+.legend-dot.interview { background-color: var(--status-ES提出済み); }
+.legend-dot.internship-date { background-color: var(--status-最終面接); }
 .legend-dot.soon { background-color: var(--danger); }
 
 /* ================================================================
@@ -877,5 +1033,35 @@ form#internship-form {
   .calendar-legend {
     gap: 10px;
     font-size: 0.7rem;
+  }
+
+  .dashboard-grid-2col {
+    grid-template-columns: 1fr;
+  }
+
+  .hbar-row {
+    grid-template-columns: 5em 1fr 4.2em;
+    font-size: 0.74rem;
+  }
+
+  .agenda-row,
+  .ranking-row {
+    font-size: 0.78rem;
+  }
+
+  .agenda-day-badge,
+  .ranking-day-badge {
+    min-width: 3.8em;
+    font-size: 0.68rem;
+  }
+
+  .funnel-bar {
+    min-width: 60%;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+  }
+
+  .dashboard-card {
+    padding: 14px 16px;
   }
 }
