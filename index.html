@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- スマホで見たときに正しい大きさで表示されるようにする設定 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>インターン応募管理</title>
+
+  <!-- ホーム画面に追加したときのアイコンや、アプリらしく起動するための設定(PWA) -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a3aa7">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="応募管理">
+
+  <!-- 見た目(CSS)を読み込む -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-shell">
+    <!-- ===== 上部バー ===== -->
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">IM</span>
+          <span class="brand-name">インターン応募管理</span>
+        </div>
+        <button type="button" id="open-add-btn" class="btn btn-primary">＋ 新規追加</button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== 業界フィルター(ここで絞り込むと、下のダッシュボードと一覧の両方に反映される) ===== -->
+      <section class="filter-row" aria-label="絞り込み">
+        <label for="industry-filter">業界で絞り込み</label>
+        <select id="industry-filter">
+          <option value="all">すべての業界</option>
+        </select>
+      </section>
+
+      <!-- ===== ダッシュボード ===== -->
+      <section class="dashboard">
+        <h2 class="section-title">ダッシュボード</h2>
+
+        <!-- 統計タイル(件数やES通過率などをひと目で見られるカード) -->
+        <div class="stat-grid" id="stat-grid"></div>
+
+        <!-- 選考状況別の件数グラフ(SVGで自作した棒グラフ) -->
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3 class="chart-title">選考状況別の件数</h3>
+            <span class="chart-subtitle" id="chart-total"></span>
+          </div>
+          <div class="chart-wrap" id="status-chart"></div>
+        </div>
+      </section>
+
+      <!-- ===== 応募一覧 ===== -->
+      <section class="list-section">
+        <div class="list-header">
+          <h2 class="section-title">応募一覧（締切が近い順）</h2>
+          <span class="list-count" id="list-count"></span>
+        </div>
+        <p id="empty-message" hidden>まだ応募が登録されていません。右上の「＋ 新規追加」から追加してください。</p>
+        <div id="internship-list" class="card-grid"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ===== 追加・編集用モーダル(ネイティブの<dialog>要素を使用) ===== -->
+  <dialog id="form-modal">
+    <form id="internship-form">
+      <div class="modal-header">
+        <h2 id="form-title">新しい応募を追加</h2>
+        <button type="button" id="close-modal-btn" class="icon-btn" aria-label="閉じる">×</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- 編集中のデータのIDをこっそり保持しておくための隠しフィールド -->
+        <input type="hidden" id="edit-id">
+
+        <div class="form-row">
+          <label for="company">企業名</label>
+          <input type="text" id="company" required placeholder="例）株式会社サンプル">
+        </div>
+
+        <div class="form-row-group">
+          <div class="form-row">
+            <label for="industry">業界</label>
+            <input type="text" id="industry" placeholder="例）IT・Web" list="industry-suggestions">
+            <datalist id="industry-suggestions"></datalist>
+          </div>
+
+          <div class="form-row">
+            <label for="status">選考状況</label>
+            <select id="status">
+              <option value="未応募">未応募</option>
+              <option value="応募済み">応募済み</option>
+              <option value="書類選考中">書類選考中</option>
+              <option value="面接予定">面接予定</option>
+              <option value="内定">内定</option>
+              <option value="不合格">不合格</option>
+              <option value="辞退">辞退</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-group">
+          <div class="form-row">
+            <label for="deadline">応募締切</label>
+            <input type="date" id="deadline" required>
+          </div>
+
+          <div class="form-row">
+            <label for="interview-date">面接日</label>
+            <input type="date" id="interview-date">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="memo">メモ</label>
+          <textarea id="memo" rows="3" placeholder="持ち物、対策メモなど"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="cancel-btn" class="btn btn-secondary">キャンセル</button>
+        <button type="submit" id="submit-btn" class="btn btn-primary">追加する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- グラフの棒にカーソルを合わせたときに出るツールチップ -->
+  <div id="chart-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
+
+  <!-- 実際の動き(JavaScript)を読み込む。bodyの最後に書くことでHTMLの読み込みを妨げない -->
+  <script src="script.js"></script>
+</body>
+</html>

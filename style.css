@@ -1,0 +1,662 @@
+/* ================================================================
+   デザインの土台となる値(カラー・余白など)をまとめて定義しておく。
+   ここを変えるだけでアプリ全体の見た目を調整できる。
+   配色はNotionやStripeのような「白基調＋控えめなアクセント1色」を意識。
+   ================================================================ */
+:root {
+  /* 背景・カード面 */
+  --page-bg: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-hover: #f3f2ef;
+
+  /* 文字色 */
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+
+  /* 罫線・影 */
+  --border: rgba(11, 11, 11, 0.10);
+  --gridline: #e1e0d9;
+  --shadow-sm: 0 1px 2px rgba(11, 11, 11, 0.04);
+  --shadow-md: 0 8px 24px rgba(11, 11, 11, 0.08);
+
+  /* アクセントカラー(Stripeのような紫寄りの青) */
+  --accent: #4a3aa7;
+  --accent-hover: #3d2f8c;
+  --accent-wash: rgba(74, 58, 167, 0.08);
+
+  /* 選考状況ごとの色(グラフの棒・バッジ両方で共通利用) */
+  --status-未応募: #c3c2b7;
+  --status-応募済み: #2a78d6;
+  --status-書類選考中: #eda100;
+  --status-面接予定: #4a3aa7;
+  --status-内定: #0ca30c;
+  --status-不合格: #d03b3b;
+  --status-辞退: #898781;
+
+  /* 締切が近い/過ぎている時の警告色 */
+  --danger: #d03b3b;
+  --warning-bg: #fdf3e0;
+  --warning-text: #92600b;
+  --danger-bg: #fbeaea;
+  --danger-text: #a12727;
+
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+}
+
+* {
+  /* padding や border を width に含めて計算する。レイアウト崩れを防ぐ定番の設定 */
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
+    "Yu Gothic", Meiryo, Roboto, sans-serif;
+  background-color: var(--page-bg);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ================================================================
+   上部バー
+   ================================================================ */
+.topbar {
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background-color: var(--accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.content {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 14px;
+}
+
+/* ================================================================
+   共通ボタン・フォーム部品
+   ================================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+  font-family: inherit;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-secondary {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.btn-secondary:hover {
+  background-color: var(--surface-hover);
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+.icon-btn:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+input[type="text"],
+input[type="date"],
+select,
+textarea {
+  padding: 9px 10px;
+  font-size: 0.92rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  width: 100%;
+  font-family: inherit;
+  color: var(--text-primary);
+  background-color: var(--surface);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/* ================================================================
+   フィルター行(業界フィルターなど、ダッシュボードと一覧の両方に効く)
+   ================================================================ */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.filter-row label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.filter-row select {
+  max-width: 220px;
+}
+
+/* ================================================================
+   ダッシュボード
+   ================================================================ */
+.dashboard {
+  margin-bottom: 28px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-tile {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stat-caption {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.help-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--gridline);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  cursor: help;
+}
+
+/* ---- グラフカード ---- */
+.chart-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.chart-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.chart-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.chart-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.chart-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.chart-wrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.bar-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.bar-shape {
+  transition: opacity 0.1s ease;
+}
+
+.bar-group:hover .bar-shape,
+.bar-group:focus .bar-shape {
+  opacity: 0.75;
+}
+
+.bar-group:focus {
+  outline: none;
+}
+
+.bar-group:focus .bar-hit {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chart-axis-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+.chart-value-label {
+  fill: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chart-gridline {
+  stroke: var(--gridline);
+  stroke-width: 1;
+}
+
+.chart-baseline {
+  stroke: #c3c2b7;
+  stroke-width: 1;
+}
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 100;
+  background-color: var(--text-primary);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+}
+
+.chart-tooltip strong {
+  font-weight: 700;
+}
+
+.chart-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* ================================================================
+   一覧部分
+   ================================================================ */
+.list-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.list-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+#empty-message {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 32px 16px;
+  background-color: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background-color: var(--gridline);
+  color: var(--text-secondary);
+}
+
+.status-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+/* 選考状況ごとにバッジの文字色を変える(背景は薄いトーンで統一し、Notionのタグ風に) */
+.status-未応募 { color: var(--status-未応募); background-color: #f1f1ef; }
+.status-応募済み { color: var(--status-応募済み); background-color: #eaf2fc; }
+.status-書類選考中 { color: var(--status-書類選考中); background-color: #fdf1dc; }
+.status-面接予定 { color: var(--status-面接予定); background-color: #ece9f7; }
+.status-内定 { color: var(--status-内定); background-color: #e6f6e6; }
+.status-不合格 { color: var(--status-不合格); background-color: #fbeaea; }
+.status-辞退 { color: var(--status-辞退); background-color: #f1f1ef; }
+
+.card-body {
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-body .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-body .label {
+  color: var(--text-muted);
+}
+
+.deadline-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background-color: var(--gridline);
+  color: var(--text-secondary);
+}
+
+.deadline-pill.soon {
+  background-color: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.deadline-pill.over {
+  background-color: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.card-memo {
+  white-space: pre-wrap; /* 改行を含むメモをそのまま表示するため */
+  background-color: var(--page-bg);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+/* 締切を過ぎている案件は少し薄く表示する */
+.card.deadline-over {
+  opacity: 0.65;
+}
+
+.card-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.card-actions .btn {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 0.8rem;
+}
+
+.edit-btn {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.edit-btn:hover {
+  background-color: var(--surface-hover);
+}
+
+.delete-btn {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--danger);
+}
+.delete-btn:hover {
+  background-color: var(--danger-bg);
+}
+
+/* ================================================================
+   追加・編集モーダル
+   ================================================================ */
+dialog#form-modal {
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 0;
+  width: min(480px, 92vw);
+  max-height: 88vh;
+  box-shadow: var(--shadow-md);
+  background-color: var(--surface);
+  /* ヘッダー・フッターは常に見える高さで固定し、内容が長い時は中央のmodal-bodyだけがスクロールするようにする */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+dialog#form-modal[open] {
+  display: flex;
+}
+
+dialog#form-modal::backdrop {
+  background-color: rgba(11, 11, 11, 0.45);
+}
+
+form#internship-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 8px;
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.modal-body {
+  padding: 8px 20px 4px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 20px;
+  flex-shrink: 0;
+}
+
+.form-row {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.form-row label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: var(--text-secondary);
+}
+
+.form-row-group {
+  display: flex;
+  gap: 12px;
+}
+
+/* ================================================================
+   スマホ対応
+   ================================================================ */
+@media (max-width: 480px) {
+  .topbar-inner {
+    padding: 12px 16px;
+  }
+
+  .brand-name {
+    font-size: 0.95rem;
+  }
+
+  .content {
+    padding: 14px;
+  }
+
+  .form-row-group {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .card-actions {
+    flex-direction: column;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+  }
+}
