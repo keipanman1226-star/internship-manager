@@ -488,6 +488,15 @@ function renderStatusChart(items) {
   });
 }
 
+// スマホなどのタッチ操作では「カーソルが離れる(pointerleave)」がマウスのようには発生せず、
+// 棒をタップしたあとツールチップが消えずに残ってしまうことがある。
+// そのため、棒グラフ以外の場所をタップ/クリックしたときは、必ずツールチップを閉じるようにする。
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest(".bar-group")) {
+    chartTooltip.hidden = true;
+  }
+});
+
 // ================================================
 // 一覧表示に関する関数
 // ================================================
