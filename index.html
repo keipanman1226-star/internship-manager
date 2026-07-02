@@ -59,11 +59,12 @@
       <section class="dashboard">
         <h2 class="section-title">ダッシュボード</h2>
 
-        <!-- ①今週の予定: ES締切・説明会・面接・インターン参加を日付順にまとめて表示 -->
+        <!-- ①今週の予定: 応募企業の締切・面接・説明会・参加日までの残り日数を、就活の予定だけに絞ってカウントダウン表示する
+             (自分で自由に登録したカレンダーの予定はここには出ない。それは下の「カレンダー」タブで確認する) -->
         <div class="dashboard-card" id="agenda-card">
           <div class="dashboard-card-header">
-            <h3 class="dashboard-card-title">今週の予定</h3>
-            <span class="dashboard-card-subtitle">今日から7日以内</span>
+            <h3 class="dashboard-card-title">今週の予定(締切カウントダウン)</h3>
+            <span class="dashboard-card-subtitle">今日から7日以内・就活関連のみ</span>
           </div>
           <div id="agenda-list"></div>
         </div>
@@ -133,7 +134,7 @@
           <div id="internship-list" class="card-grid"></div>
         </div>
 
-        <!-- カレンダー表示(応募締切・面接日を月表示で確認できる) -->
+        <!-- カレンダー表示(応募締切・面接日に加えて、自分で自由に登録した予定も月表示で確認できる) -->
         <div id="calendar-view" hidden>
           <div class="calendar-card">
             <div class="calendar-header">
@@ -141,6 +142,7 @@
               <h3 id="calendar-month-label"></h3>
               <button type="button" id="cal-next" class="icon-btn" aria-label="次の月">›</button>
             </div>
+            <p class="calendar-hint">日付をタップすると予定を追加できます</p>
             <div class="calendar-weekdays">
               <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
             </div>
@@ -151,6 +153,14 @@
               <span class="legend-item"><span class="legend-dot interview"></span>面接日</span>
               <span class="legend-item"><span class="legend-dot internship-date"></span>参加日</span>
               <span class="legend-item"><span class="legend-dot soon"></span>締切間近(3日以内)</span>
+            </div>
+            <div class="calendar-legend">
+              <span class="legend-label">自分の予定:</span>
+              <span class="legend-item"><span class="legend-dot custom-面接"></span>面接</span>
+              <span class="legend-item"><span class="legend-dot custom-説明会"></span>説明会</span>
+              <span class="legend-item"><span class="legend-dot custom-ES提出"></span>ES提出</span>
+              <span class="legend-item"><span class="legend-dot custom-大学"></span>大学</span>
+              <span class="legend-item"><span class="legend-dot custom-その他"></span>その他</span>
             </div>
           </div>
         </div>
@@ -303,6 +313,51 @@
       <div class="modal-footer">
         <button type="button" id="passcode-cancel-btn" class="btn btn-secondary">キャンセル</button>
         <button type="submit" id="passcode-submit-btn" class="btn btn-primary">設定する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ===== カレンダーの自由な予定を追加・編集するモーダル(企業の応募情報とは別に管理する) ===== -->
+  <dialog id="event-modal">
+    <form id="event-form">
+      <div class="modal-header">
+        <h2 id="event-modal-title">予定を追加</h2>
+        <button type="button" id="event-close-btn" class="icon-btn" aria-label="閉じる">×</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="event-id">
+
+        <div class="form-row">
+          <label for="event-title">予定のタイトル</label>
+          <input type="text" id="event-title" required placeholder="例）大学のキャリアガイダンス">
+        </div>
+
+        <div class="form-row-group">
+          <div class="form-row">
+            <label for="event-date">日付</label>
+            <input type="date" id="event-date" required>
+          </div>
+          <div class="form-row">
+            <label for="event-category">種類</label>
+            <select id="event-category">
+              <option value="面接">面接</option>
+              <option value="説明会">説明会</option>
+              <option value="ES提出">ES提出</option>
+              <option value="大学">大学</option>
+              <option value="その他">その他</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="event-memo">メモ(任意)</label>
+          <textarea id="event-memo" rows="3" placeholder="場所や持ち物など"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="event-delete-btn" class="btn btn-secondary" hidden>削除する</button>
+        <button type="button" id="event-cancel-btn" class="btn btn-secondary">キャンセル</button>
+        <button type="submit" id="event-submit-btn" class="btn btn-primary">追加する</button>
       </div>
     </form>
   </dialog>

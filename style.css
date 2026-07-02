@@ -394,6 +394,17 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.agenda-text {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agenda-text strong {
+  font-weight: 700;
+}
+
 /* 締切・予定が近いことを示す警告色(赤=1日以内、オレンジ=3日以内) */
 .urgent-critical {
   background-color: var(--danger-bg) !important;
@@ -772,6 +783,13 @@ textarea:focus {
   text-align: center;
 }
 
+.calendar-hint {
+  text-align: center;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
 .calendar-weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -798,6 +816,11 @@ textarea:focus {
   flex-direction: column;
   gap: 2px;
   background-color: var(--surface);
+  cursor: pointer; /* タップして予定を追加できることを示す */
+}
+
+.calendar-cell:hover {
+  background-color: var(--surface-hover);
 }
 
 .calendar-cell.outside {
@@ -859,6 +882,17 @@ textarea:focus {
   font-weight: 700;
 }
 
+/* 自分で自由に登録した予定のチップ。企業の予定と見分けやすいよう点線の枠をつける */
+.calendar-chip.custom-event {
+  border: 1px dashed currentColor;
+}
+
+.calendar-chip.custom-面接 { background-color: #eaf2fc; color: var(--status-ES提出済み); }
+.calendar-chip.custom-説明会 { background-color: #e2f5ee; color: var(--status-面接中); }
+.calendar-chip.custom-ES提出 { background-color: #fdf1dc; color: var(--status-書類選考中); }
+.calendar-chip.custom-大学 { background-color: #e6f6e6; color: var(--status-通過); }
+.calendar-chip.custom-その他 { background-color: #f1f1ef; color: var(--text-secondary); }
+
 .calendar-more {
   font-size: 0.62rem;
   color: var(--text-muted);
@@ -893,11 +927,23 @@ textarea:focus {
 .legend-dot.internship-date { background-color: var(--status-最終面接); }
 .legend-dot.soon { background-color: var(--danger); }
 
+.legend-dot.custom-面接 { background-color: var(--status-ES提出済み); }
+.legend-dot.custom-説明会 { background-color: var(--status-面接中); }
+.legend-dot.custom-ES提出 { background-color: var(--status-書類選考中); }
+.legend-dot.custom-大学 { background-color: var(--status-通過); }
+.legend-dot.custom-その他 { background-color: var(--text-muted); }
+
+.legend-label {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
 /* ================================================================
    追加・編集モーダル
    ================================================================ */
 dialog#form-modal,
-dialog#passcode-modal {
+dialog#passcode-modal,
+dialog#event-modal {
   border: none;
   border-radius: var(--radius-lg);
   padding: 0;
@@ -911,21 +957,29 @@ dialog#passcode-modal {
 }
 
 dialog#form-modal[open],
-dialog#passcode-modal[open] {
+dialog#passcode-modal[open],
+dialog#event-modal[open] {
   display: flex;
   flex-direction: column;
 }
 
 dialog#form-modal::backdrop,
-dialog#passcode-modal::backdrop {
+dialog#passcode-modal::backdrop,
+dialog#event-modal::backdrop {
   background-color: rgba(11, 11, 11, 0.45);
 }
 
 form#internship-form,
-form#passcode-form {
+form#passcode-form,
+form#event-form {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+#event-delete-btn {
+  margin-right: auto;
+  color: var(--danger);
 }
 
 .modal-header {

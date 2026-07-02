@@ -48,6 +48,28 @@ const TYPE_COLORS = {
 const INDUSTRY_PALETTE = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834"];
 const INDUSTRY_FALLBACK_COLOR = "#898781";
 
+// カレンダーに自由に登録できる予定の種類と色
+// (企業の応募情報とは別に管理する、自分だけのカレンダー予定)
+const CUSTOM_EVENT_CATEGORIES = ["面接", "説明会", "ES提出", "大学", "その他"];
+const CUSTOM_EVENT_COLORS = {
+  面接: "#2a78d6",
+  説明会: "#1baf7a",
+  ES提出: "#eda100",
+  大学: "#0ca30c",
+  その他: "#898781",
+};
+
+// カレンダーの自由な予定を保存するキー(応募データとは別のキーで管理する)
+const CUSTOM_EVENTS_KEY = "internship-manager-custom-events";
+
+function loadCustomEvents() {
+  const raw = localStorage.getItem(CUSTOM_EVENTS_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+function saveCustomEvents(events) {
+  localStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(events));
+}
+
 // ================================================
 // 過去バージョンのデータを、新しい項目・新しい選考状況名に合わせて変換する処理
 // (アプリを更新しても、これまで保存してきたデータが消えたり壊れたりしないようにするため)
@@ -400,6 +422,18 @@ const passcodeCancelBtn = document.getElementById("passcode-cancel-btn");
 const passcodeCloseBtn = document.getElementById("passcode-close-btn");
 const passcodeSubmitBtn = document.getElementById("passcode-submit-btn");
 
+const eventModal = document.getElementById("event-modal");
+const eventForm = document.getElementById("event-form");
+const eventModalTitle = document.getElementById("event-modal-title");
+const eventIdInput = document.getElementById("event-id");
+const eventTitleInput = document.getElementById("event-title");
+const eventDateInput = document.getElementById("event-date");
+const eventCategoryInput = document.getElementById("event-category");
+const eventMemoInput = document.getElementById("event-memo");
+const eventDeleteBtn = document.getElementById("event-delete-btn");
+const eventCancelBtn = document.getElementById("event-cancel-btn");
+const eventCloseBtn = document.getElementById("event-close-btn");
+
 const toastEl = document.getElementById("toast");
 
 const industryFilterSelect = document.getElementById("industry-filter");
@@ -620,19 +654,15 @@ function urgencyClass(days) {
 }
 
 // ================================================
-// ①今週の予定(ES締切・説明会・面接・インターン参加を日付順にまとめて表示)
+// ①今週の予定
+// 就活関連(応募企業のES締切・説明会・面接・インターン参加)の残り日数だけを
+// カウントダウン形式でまとめて表示する。自分で自由に登録したカレンダーの予定はここには含めない。
 // ================================================
-const AGENDA_KIND_LABELS = {
-  deadline: "ES締切",
+const AGENDA_KIND_PHRASES = {
+  deadline: "インターン応募締切",
   infoSession: "説明会",
   interview: "面接",
   internshipDate: "インターン参加",
-};
-const AGENDA_KIND_COLORS = {
-  deadline: "#4a3aa7",
-  infoSession: "#1baf7a",
-  interview: "#2a78d6",
-  internshipDate: "#eb6834",
 };
 
 function renderAgenda(items) {
@@ -651,7 +681,8 @@ function renderAgenda(items) {
     });
   });
 
-  entries.sort((a, b) => new Date(a.dateString) - new Date(b.dateString));
+  // 残り日数が少ない(=締切が近い)順に並べる
+  entries.sort((a, b) => a.days - b.days);
 
   agendaList.innerHTML = "";
 
@@ -669,18 +700,17 @@ function renderAgenda(items) {
     dayBadge.className = `agenda-day-badge ${urgencyClass(days)}`;
     dayBadge.textContent = formatDaysLabel(days);
 
-    const kindBadge = document.createElement("span");
-    kindBadge.className = "agenda-kind-badge";
-    kindBadge.style.color = AGENDA_KIND_COLORS[kind];
-    kindBadge.textContent = AGENDA_KIND_LABELS[kind];
-
-    const companyLabel = document.createElement("span");
-    companyLabel.className = "agenda-company";
-    companyLabel.textContent = item.company;
+    // 例:「〇〇株式会社 インターン応募締切まであと3日」の「まであと◯日」を除いた部分をここに表示する
+    // (残り日数はすでに左のバッジで強調しているため)
+    const textEl = document.createElement("span");
+    textEl.className = "agenda-text";
+    const strong = document.createElement("strong");
+    strong.textContent = item.company;
+    textEl.appendChild(strong);
+    textEl.appendChild(document.createTextNode(` ${AGENDA_KIND_PHRASES[kind]}`));
 
     row.appendChild(dayBadge);
-    row.appendChild(kindBadge);
-    row.appendChild(companyLabel);
+    row.appendChild(textEl);
     row.addEventListener("click", () => startEdit(item.id));
 
     agendaList.appendChild(row);
@@ -1127,18 +1157,22 @@ function renderCalendar(items) {
 
   calendarMonthLabel.textContent = `${year}年${month + 1}月`;
 
-  // 日付(YYYY-MM-DD文字列)ごとに、その日が締切/説明会/面接/参加日になっている案件をまとめておく
+  // 日付(YYYY-MM-DD文字列)ごとに、その日が締切/説明会/面接/参加日になっている案件と、
+  // 自分で自由に登録した予定をまとめておく
   const eventsByDate = new Map();
-  const addEvent = (dateKey, item, kind) => {
+  const addEvent = (dateKey, entry) => {
     if (!dateKey) return;
     if (!eventsByDate.has(dateKey)) eventsByDate.set(dateKey, []);
-    eventsByDate.get(dateKey).push({ item, kind });
+    eventsByDate.get(dateKey).push(entry);
   };
   items.forEach((item) => {
-    addEvent(item.deadline, item, "deadline");
-    if (item.infoSessionDate) addEvent(item.infoSessionDate, item, "infoSession");
-    if (item.interviewDate) addEvent(item.interviewDate, item, "interview");
-    if (item.internshipDate) addEvent(item.internshipDate, item, "internshipDate");
+    addEvent(item.deadline, { type: "company", item, kind: "deadline" });
+    if (item.infoSessionDate) addEvent(item.infoSessionDate, { type: "company", item, kind: "infoSession" });
+    if (item.interviewDate) addEvent(item.interviewDate, { type: "company", item, kind: "interview" });
+    if (item.internshipDate) addEvent(item.internshipDate, { type: "company", item, kind: "internshipDate" });
+  });
+  loadCustomEvents().forEach((event) => {
+    addEvent(event.date, { type: "custom", event });
   });
 
   // その月を含む週の日曜日から、6週間分(42マス)のカレンダーを作る
@@ -1184,15 +1218,32 @@ function renderCalendar(items) {
 
     const events = eventsByDate.get(cell.dateKey) || [];
     const maxVisible = 2;
-    events.slice(0, maxVisible).forEach(({ item, kind }) => {
+    events.slice(0, maxVisible).forEach((entry) => {
       const chip = document.createElement("button");
       chip.type = "button";
-      const days = kind === "deadline" ? getDaysUntil(item.deadline) : null;
-      const isSoon = kind === "deadline" && days !== null && days <= 3;
-      chip.className = `calendar-chip ${kind}` + (isSoon ? " soon" : "");
-      chip.textContent = `${CALENDAR_KIND_LABELS[kind]} ${item.company}`;
-      chip.title = `${item.company}(${CALENDAR_KIND_LABELS[kind]})`;
-      chip.addEventListener("click", () => startEdit(item.id));
+
+      if (entry.type === "company") {
+        const { item, kind } = entry;
+        const days = kind === "deadline" ? getDaysUntil(item.deadline) : null;
+        const isSoon = kind === "deadline" && days !== null && days <= 3;
+        chip.className = `calendar-chip ${kind}` + (isSoon ? " soon" : "");
+        chip.textContent = `${CALENDAR_KIND_LABELS[kind]} ${item.company}`;
+        chip.title = `${item.company}(${CALENDAR_KIND_LABELS[kind]})`;
+        chip.addEventListener("click", (clickEvent) => {
+          clickEvent.stopPropagation(); // セルの「予定を追加」判定に伝わらないようにする
+          startEdit(item.id);
+        });
+      } else {
+        const { event } = entry;
+        chip.className = `calendar-chip custom-event custom-${event.category}`;
+        chip.textContent = `${event.category} ${event.title}`;
+        chip.title = `${event.title}(${event.category})`;
+        chip.addEventListener("click", (clickEvent) => {
+          clickEvent.stopPropagation();
+          openEventModal({ event });
+        });
+      }
+
       cellEl.appendChild(chip);
     });
     if (events.length > maxVisible) {
@@ -1201,6 +1252,11 @@ function renderCalendar(items) {
       more.textContent = `+${events.length - maxVisible}件`;
       cellEl.appendChild(more);
     }
+
+    // 空いている場所(予定チップ以外)をタップすると、その日付で新しい予定を追加できる
+    cellEl.addEventListener("click", () => {
+      openEventModal({ dateKey: cell.dateKey });
+    });
 
     calendarGrid.appendChild(cellEl);
   });
@@ -1214,6 +1270,72 @@ calPrevBtn.addEventListener("click", () => {
 calNextBtn.addEventListener("click", () => {
   calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
   renderCalendar(lastFilteredItems);
+});
+
+// ================================================
+// カレンダーの自由な予定(面接・説明会・ES提出・大学の予定など)の追加・編集・削除
+// 企業の応募データとは別に、それ専用のlocalStorageキーで管理する。
+// ================================================
+
+// 予定モーダルを開く。新規追加なら{dateKey}を、既存の予定を編集するなら{event}を渡す
+function openEventModal({ event, dateKey } = {}) {
+  eventForm.reset();
+  if (event) {
+    eventModalTitle.textContent = "予定を編集";
+    eventIdInput.value = event.id;
+    eventTitleInput.value = event.title;
+    eventDateInput.value = event.date;
+    eventCategoryInput.value = event.category;
+    eventMemoInput.value = event.memo || "";
+    eventDeleteBtn.hidden = false;
+    document.getElementById("event-submit-btn").textContent = "更新する";
+  } else {
+    eventModalTitle.textContent = "予定を追加";
+    eventIdInput.value = "";
+    eventDateInput.value = dateKey || "";
+    eventDeleteBtn.hidden = true;
+    document.getElementById("event-submit-btn").textContent = "追加する";
+  }
+  eventModal.showModal();
+  eventTitleInput.focus();
+}
+
+function closeEventModal() {
+  eventModal.close();
+}
+
+eventCancelBtn.addEventListener("click", closeEventModal);
+eventCloseBtn.addEventListener("click", closeEventModal);
+
+eventForm.addEventListener("submit", (submitEvent) => {
+  submitEvent.preventDefault();
+
+  const events = loadCustomEvents();
+  const formData = {
+    title: eventTitleInput.value.trim(),
+    date: eventDateInput.value,
+    category: eventCategoryInput.value,
+    memo: eventMemoInput.value.trim(),
+  };
+
+  if (eventIdInput.value) {
+    const index = events.findIndex((e) => e.id === eventIdInput.value);
+    if (index !== -1) events[index] = { id: eventIdInput.value, ...formData };
+  } else {
+    events.push({ id: Date.now().toString(), ...formData });
+  }
+
+  saveCustomEvents(events);
+  renderCalendar(lastFilteredItems);
+  closeEventModal();
+});
+
+eventDeleteBtn.addEventListener("click", () => {
+  if (!confirm("この予定を削除しますか？")) return;
+  const events = loadCustomEvents().filter((e) => e.id !== eventIdInput.value);
+  saveCustomEvents(events);
+  renderCalendar(lastFilteredItems);
+  closeEventModal();
 });
 
 // ================================================
