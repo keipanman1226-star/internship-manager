@@ -7,7 +7,7 @@
 
 // キャッシュの名前。ファイルの中身を更新したときはこの名前を変えると、
 // 古いキャッシュを破棄して新しいファイルに差し替えられる。
-const CACHE_NAME = "internship-manager-v1";
+const CACHE_NAME = "internship-manager-v2";
 
 // オフラインでも開けるようにしておきたいファイル一覧(アプリの外枠)
 const APP_SHELL = [
@@ -40,9 +40,17 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// リクエストが来たとき: まずキャッシュを探し、なければネットワークから取得する
+// リクエストが来たとき: まずネットワークから最新のファイルを取りに行き、
+// 取得できたらキャッシュを最新版に更新する(電波があれば常に最新のアプリが表示される)。
+// 電波が悪い・オフラインでネットワークが使えないときだけ、保存しておいたキャッシュを使う。
 self.addEventListener("fetch", (event) => {
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
