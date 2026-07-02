@@ -194,23 +194,41 @@ textarea:focus {
 }
 
 /* ================================================================
-   フィルター行(業界フィルターなど、ダッシュボードと一覧の両方に効く)
+   フィルター行(業界・インターン内容・企業名検索。ダッシュボード/グラフ/一覧/カレンダーすべてに効く)
    ================================================================ */
 .filter-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
 }
 
-.filter-row label {
-  font-size: 0.85rem;
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.filter-group label {
+  font-size: 0.78rem;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
-.filter-row select {
-  max-width: 220px;
+.filter-group select,
+.filter-group input {
+  min-width: 160px;
+}
+
+.filter-search {
+  flex: 1;
+  min-width: 180px;
+}
+
+.filter-search input {
+  min-width: 0;
+  width: 100%;
 }
 
 /* ================================================================
@@ -383,7 +401,9 @@ textarea:focus {
    ================================================================ */
 .list-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: space-between;
   margin-bottom: 14px;
 }
@@ -391,6 +411,33 @@ textarea:focus {
 .list-count {
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+/* ---- 一覧/カレンダーの切り替えタブ ---- */
+.view-tabs {
+  display: inline-flex;
+  background-color: var(--gridline);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 2px;
+}
+
+.view-tab {
+  border: none;
+  background: transparent;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.view-tab.active {
+  background-color: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
 }
 
 #empty-message {
@@ -551,6 +598,140 @@ textarea:focus {
 }
 
 /* ================================================================
+   カレンダー表示
+   ================================================================ */
+.calendar-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.calendar-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-width: 8em;
+  text-align: center;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-cell {
+  min-height: 76px;
+  min-width: 0; /* グリッドの列がチップの文字幅に引っ張られてはみ出さないようにする */
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background-color: var(--surface);
+}
+
+.calendar-cell.outside {
+  background-color: var(--page-bg);
+  opacity: 0.55;
+}
+
+.calendar-cell.today {
+  border-color: var(--accent);
+  border-width: 2px;
+}
+
+.calendar-day-number {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.calendar-chip {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 5px;
+  padding: 2px 5px;
+  font-size: 0.62rem;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-chip.deadline {
+  background-color: #ece9f7;
+  color: var(--accent);
+}
+
+.calendar-chip.interview {
+  background-color: #eaf2fc;
+  color: var(--status-応募済み);
+}
+
+.calendar-chip.soon {
+  background-color: var(--danger-bg);
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
+.calendar-more {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.deadline { background-color: var(--accent); }
+.legend-dot.interview { background-color: var(--status-応募済み); }
+.legend-dot.soon { background-color: var(--danger); }
+
+/* ================================================================
    追加・編集モーダル
    ================================================================ */
 dialog#form-modal {
@@ -561,14 +742,14 @@ dialog#form-modal {
   max-height: 88vh;
   box-shadow: var(--shadow-md);
   background-color: var(--surface);
-  /* ヘッダー・フッターは常に見える高さで固定し、内容が長い時は中央のmodal-bodyだけがスクロールするようにする */
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
+  /* 閉じている間は表示しない(dialogの標準の挙動)。開いている間だけ、
+     ヘッダー・フッターを常に見える高さで固定し、中央のmodal-bodyだけがスクロールするようにする */
 }
 
 dialog#form-modal[open] {
   display: flex;
+  flex-direction: column;
 }
 
 dialog#form-modal::backdrop {
@@ -658,5 +839,43 @@ form#internship-form {
 
   .modal-footer .btn {
     width: 100%;
+  }
+
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group select,
+  .filter-group input {
+    min-width: 0;
+  }
+
+  .list-header {
+    justify-content: flex-start;
+  }
+
+  .calendar-cell {
+    min-height: 56px;
+    padding: 3px;
+  }
+
+  .calendar-day-number {
+    font-size: 0.68rem;
+  }
+
+  .calendar-chip {
+    font-size: 0.56rem;
+    padding: 1px 3px;
+  }
+
+  .calendar-header h3 {
+    font-size: 0.85rem;
+    min-width: 6em;
+  }
+
+  .calendar-legend {
+    gap: 10px;
+    font-size: 0.7rem;
   }
 }

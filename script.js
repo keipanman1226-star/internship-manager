@@ -22,8 +22,30 @@ const STATUS_COLORS = {
   辞退: "#898781",
 };
 
-// 現在選択されている業界フィルター("all"のときはすべて表示)
+// 「インターン内容」欄で最初から候補に出しておく、よくある職種・業務内容
+const INTERNSHIP_TYPE_PRESETS = [
+  "データ分析", "システム開発", "営業", "マーケティング", "企画",
+  "コンサルティング", "人事", "デザイン", "広報", "1day仕事体験",
+];
+
+// 現在選択されている絞り込み条件("all"のときはすべて表示)
 let currentIndustryFilter = "all";
+let currentTypeFilter = "all";
+let currentSearchText = "";
+
+// 現在表示中のビュー("list" または "calendar")
+let currentView = "list";
+
+// カレンダーで表示中の月(常に月の1日を指すDateにしておく)
+let calendarMonth = (() => {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+})();
+
+// 直前にrenderAll()で計算した絞り込み済みデータ(月を切り替えるときに再利用する)
+let lastFilteredItems = [];
 
 // ---- HTMLの要素を先に取得しておく ----
 const form = document.getElementById("internship-form");
@@ -31,6 +53,8 @@ const editIdInput = document.getElementById("edit-id");
 const companyInput = document.getElementById("company");
 const industryInput = document.getElementById("industry");
 const industrySuggestions = document.getElementById("industry-suggestions");
+const internshipTypeInput = document.getElementById("internship-type");
+const typeSuggestions = document.getElementById("type-suggestions");
 const deadlineInput = document.getElementById("deadline");
 const statusInput = document.getElementById("status");
 const interviewDateInput = document.getElementById("interview-date");
@@ -44,6 +68,8 @@ const openAddBtn = document.getElementById("open-add-btn");
 const formModal = document.getElementById("form-modal");
 
 const industryFilterSelect = document.getElementById("industry-filter");
+const typeFilterSelect = document.getElementById("type-filter");
+const searchInput = document.getElementById("search-input");
 
 const statGrid = document.getElementById("stat-grid");
 const chartWrap = document.getElementById("status-chart");
@@ -53,6 +79,14 @@ const chartTooltip = document.getElementById("chart-tooltip");
 const listContainer = document.getElementById("internship-list");
 const listCount = document.getElementById("list-count");
 const emptyMessage = document.getElementById("empty-message");
+
+const viewTabs = document.querySelectorAll(".view-tab");
+const listViewEl = document.getElementById("list-view");
+const calendarViewEl = document.getElementById("calendar-view");
+const calPrevBtn = document.getElementById("cal-prev");
+const calNextBtn = document.getElementById("cal-next");
+const calendarMonthLabel = document.getElementById("calendar-month-label");
+const calendarGrid = document.getElementById("calendar-grid");
 
 // ================================================
 // localStorage とのやりとりをする関数
@@ -84,13 +118,20 @@ function renderAll() {
   const all = loadInternships();
 
   renderIndustryFilterOptions(all);
+  renderTypeFilterOptions(all);
   renderIndustrySuggestions(all);
+  renderTypeSuggestions(all);
 
-  const filtered = filterByIndustry(all, currentIndustryFilter);
+  let filtered = filterByIndustry(all, currentIndustryFilter);
+  filtered = filterByType(filtered, currentTypeFilter);
+  filtered = filterBySearch(filtered, currentSearchText);
+
+  lastFilteredItems = filtered;
 
   renderStatTiles(filtered);
   renderStatusChart(filtered);
   renderList(filtered);
+  renderCalendar(filtered);
 }
 
 // 業界フィルターの値に応じてデータを絞り込む関数
@@ -99,8 +140,21 @@ function filterByIndustry(internships, industry) {
   return internships.filter((item) => (item.industry || "未分類") === industry);
 }
 
+// インターン内容フィルターの値に応じてデータを絞り込む関数
+function filterByType(internships, type) {
+  if (type === "all") return internships;
+  return internships.filter((item) => (item.internshipType || "未分類") === type);
+}
+
+// 企業名の検索キーワードでデータを絞り込む関数(部分一致・大文字小文字を区別しない)
+function filterBySearch(internships, keyword) {
+  const trimmed = keyword.trim().toLowerCase();
+  if (!trimmed) return internships;
+  return internships.filter((item) => item.company.toLowerCase().includes(trimmed));
+}
+
 // ================================================
-// 業界フィルター(セレクトボックス)の描画
+// 業界・インターン内容フィルター(セレクトボックス)の描画
 // ================================================
 function renderIndustryFilterOptions(all) {
   // 登録されているデータから、重複のない業界名の一覧を作る
@@ -129,6 +183,31 @@ function renderIndustryFilterOptions(all) {
   }
 }
 
+// インターン内容フィルターの選択肢を作る(登録データ内の内容一覧から)
+function renderTypeFilterOptions(all) {
+  const types = Array.from(
+    new Set(all.map((item) => (item.internshipType || "").trim() || "未分類"))
+  ).sort((a, b) => a.localeCompare(b, "ja"));
+
+  const previousValue = typeFilterSelect.value || currentTypeFilter;
+
+  typeFilterSelect.innerHTML = '<option value="all">すべての内容</option>';
+  types.forEach((type) => {
+    const option = document.createElement("option");
+    option.value = type;
+    option.textContent = type;
+    typeFilterSelect.appendChild(option);
+  });
+
+  if (types.includes(previousValue) || previousValue === "all") {
+    typeFilterSelect.value = previousValue;
+    currentTypeFilter = previousValue;
+  } else {
+    typeFilterSelect.value = "all";
+    currentTypeFilter = "all";
+  }
+}
+
 // 入力フォームの「業界」欄で過去の入力候補が出るようにする(datalist)
 function renderIndustrySuggestions(all) {
   const industries = Array.from(
@@ -142,8 +221,30 @@ function renderIndustrySuggestions(all) {
   });
 }
 
+// 入力フォームの「インターン内容」欄の候補を作る(あらかじめ用意した候補 + 過去の入力)
+function renderTypeSuggestions(all) {
+  const pastTypes = all.map((item) => (item.internshipType || "").trim()).filter(Boolean);
+  const types = Array.from(new Set([...INTERNSHIP_TYPE_PRESETS, ...pastTypes]));
+  typeSuggestions.innerHTML = "";
+  types.forEach((type) => {
+    const option = document.createElement("option");
+    option.value = type;
+    typeSuggestions.appendChild(option);
+  });
+}
+
 industryFilterSelect.addEventListener("change", () => {
   currentIndustryFilter = industryFilterSelect.value;
+  renderAll();
+});
+
+typeFilterSelect.addEventListener("change", () => {
+  currentTypeFilter = typeFilterSelect.value;
+  renderAll();
+});
+
+searchInput.addEventListener("input", () => {
+  currentSearchText = searchInput.value;
   renderAll();
 });
 
@@ -190,7 +291,6 @@ function renderStatTiles(items) {
   ).length;
   const esRate = esDecided === 0 ? null : Math.round((esPassed / esDecided) * 100);
 
-  const offerCount = items.filter((i) => i.status === "内定").length;
   const inProgressCount = items.filter((i) =>
     ["書類選考中", "面接予定"].includes(i.status)
   ).length;
@@ -218,9 +318,10 @@ function renderStatTiles(items) {
       help: "ES通過率 = (面接予定+内定) ÷ (面接予定+内定+不合格)",
     },
     {
-      label: "内定",
-      value: `${offerCount}件`,
-      caption: null,
+      label: "通過",
+      value: `${esPassed}件`,
+      caption: "面接予定・内定の合計",
+      help: "通過数 = 書類選考を通過して面接予定または内定になった件数",
     },
     {
       label: "直近の締切",
@@ -439,6 +540,7 @@ function createCard(item) {
     </div>
     <div class="card-body">
       <div class="row"><span class="label">業界</span><span>${escapeHtml(item.industry) || "未入力"}</span></div>
+      <div class="row"><span class="label">内容</span><span>${escapeHtml(item.internshipType) || "未入力"}</span></div>
       <div class="row"><span class="label">応募締切</span><span>${formatDate(item.deadline)} <span class="deadline-pill ${pillClass}">${formatDaysLabel(days)}</span></span></div>
       <div class="row"><span class="label">面接日</span><span>${item.interviewDate ? formatDate(item.interviewDate) : "未定"}</span></div>
       ${item.memo ? `<div class="card-memo">${escapeHtml(item.memo)}</div>` : ""}
@@ -481,6 +583,130 @@ function escapeHtml(text) {
 }
 
 // ================================================
+// 「一覧」「カレンダー」の表示切り替え(タブ)
+// ================================================
+viewTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    currentView = tab.dataset.view;
+
+    viewTabs.forEach((t) => {
+      const isActive = t === tab;
+      t.classList.toggle("active", isActive);
+      t.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    listViewEl.hidden = currentView !== "list";
+    calendarViewEl.hidden = currentView !== "calendar";
+  });
+});
+
+// ================================================
+// カレンダー表示
+// 応募締切・面接日を月ごとのマス目の上に表示し、
+// 締切が近い予定は目立つ色にする。
+// ================================================
+
+// 日付をキー(YYYY-MM-DD)にするためのヘルパー(文字列操作だけで済ませ、タイムゾーンのずれを避ける)
+function toDateKey(year, month, day) {
+  const mm = String(month + 1).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+
+function renderCalendar(items) {
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth(); // 0始まり(0=1月)
+
+  calendarMonthLabel.textContent = `${year}年${month + 1}月`;
+
+  // 日付(YYYY-MM-DD文字列)ごとに、その日が締切/面接日になっている案件をまとめておく
+  const eventsByDate = new Map();
+  const addEvent = (dateKey, item, kind) => {
+    if (!dateKey) return;
+    if (!eventsByDate.has(dateKey)) eventsByDate.set(dateKey, []);
+    eventsByDate.get(dateKey).push({ item, kind });
+  };
+  items.forEach((item) => {
+    addEvent(item.deadline, item, "deadline");
+    if (item.interviewDate) addEvent(item.interviewDate, item, "interview");
+  });
+
+  // その月を含む週の日曜日から、6週間分(42マス)のカレンダーを作る
+  const firstOfMonth = new Date(year, month, 1);
+  const startWeekday = firstOfMonth.getDay(); // 0=日曜
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  const todayKey = toDateKey(getToday().getFullYear(), getToday().getMonth(), getToday().getDate());
+
+  const cells = [];
+  // 前月の余り日
+  for (let i = 0; i < startWeekday; i++) {
+    const day = daysInPrevMonth - startWeekday + 1 + i;
+    const prevMonthDate = new Date(year, month - 1, day);
+    cells.push({ day, dateKey: toDateKey(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), day), inMonth: false });
+  }
+  // 今月分
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push({ day, dateKey: toDateKey(year, month, day), inMonth: true });
+  }
+  // 翌月の余り日(常に6週間=42マスになるまで埋める。月によって行数が変わらないようにするため)
+  const nextMonthDate = new Date(year, month + 1, 1);
+  for (let day = 1; cells.length < 42; day++) {
+    cells.push({
+      day,
+      dateKey: toDateKey(nextMonthDate.getFullYear(), nextMonthDate.getMonth(), day),
+      inMonth: false,
+    });
+  }
+
+  calendarGrid.innerHTML = "";
+  cells.forEach((cell) => {
+    const cellEl = document.createElement("div");
+    cellEl.className = "calendar-cell";
+    if (!cell.inMonth) cellEl.classList.add("outside");
+    if (cell.dateKey === todayKey) cellEl.classList.add("today");
+
+    const dayLabel = document.createElement("div");
+    dayLabel.className = "calendar-day-number";
+    dayLabel.textContent = cell.day;
+    cellEl.appendChild(dayLabel);
+
+    const events = eventsByDate.get(cell.dateKey) || [];
+    const maxVisible = 2;
+    events.slice(0, maxVisible).forEach(({ item, kind }) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      const days = kind === "deadline" ? getDaysUntil(item.deadline) : null;
+      const isSoon = kind === "deadline" && days !== null && days <= 3;
+      chip.className = `calendar-chip ${kind}` + (isSoon ? " soon" : "");
+      chip.textContent = `${kind === "deadline" ? "締切" : "面接"} ${item.company}`;
+      chip.title = `${item.company}(${kind === "deadline" ? "応募締切" : "面接日"})`;
+      chip.addEventListener("click", () => startEdit(item.id));
+      cellEl.appendChild(chip);
+    });
+    if (events.length > maxVisible) {
+      const more = document.createElement("div");
+      more.className = "calendar-more";
+      more.textContent = `+${events.length - maxVisible}件`;
+      cellEl.appendChild(more);
+    }
+
+    calendarGrid.appendChild(cellEl);
+  });
+}
+
+calPrevBtn.addEventListener("click", () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  renderCalendar(lastFilteredItems);
+});
+
+calNextBtn.addEventListener("click", () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  renderCalendar(lastFilteredItems);
+});
+
+// ================================================
 // モーダル(追加・編集フォーム)の開閉
 // ================================================
 function openModalForAdd() {
@@ -515,6 +741,7 @@ form.addEventListener("submit", (event) => {
   const formData = {
     company: companyInput.value.trim(),
     industry: industryInput.value.trim(),
+    internshipType: internshipTypeInput.value.trim(),
     deadline: deadlineInput.value,
     status: statusInput.value,
     interviewDate: interviewDateInput.value,
@@ -551,6 +778,7 @@ function startEdit(id) {
   editIdInput.value = item.id;
   companyInput.value = item.company;
   industryInput.value = item.industry;
+  internshipTypeInput.value = item.internshipType || "";
   deadlineInput.value = item.deadline;
   statusInput.value = item.status;
   interviewDateInput.value = item.interviewDate;

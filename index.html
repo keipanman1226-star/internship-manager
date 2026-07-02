@@ -35,12 +35,24 @@
 
     <main class="content">
 
-      <!-- ===== 業界フィルター(ここで絞り込むと、下のダッシュボードと一覧の両方に反映される) ===== -->
+      <!-- ===== 絞り込み(ここで絞り込むと、下のダッシュボード・グラフ・一覧・カレンダーすべてに反映される) ===== -->
       <section class="filter-row" aria-label="絞り込み">
-        <label for="industry-filter">業界で絞り込み</label>
-        <select id="industry-filter">
-          <option value="all">すべての業界</option>
-        </select>
+        <div class="filter-group filter-search">
+          <label for="search-input">企業名で検索</label>
+          <input type="text" id="search-input" placeholder="企業名を入力">
+        </div>
+        <div class="filter-group">
+          <label for="industry-filter">業界</label>
+          <select id="industry-filter">
+            <option value="all">すべての業界</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="type-filter">インターン内容</label>
+          <select id="type-filter">
+            <option value="all">すべての内容</option>
+          </select>
+        </div>
       </section>
 
       <!-- ===== ダッシュボード ===== -->
@@ -60,14 +72,42 @@
         </div>
       </section>
 
-      <!-- ===== 応募一覧 ===== -->
+      <!-- ===== 応募一覧 / カレンダー ===== -->
       <section class="list-section">
         <div class="list-header">
-          <h2 class="section-title">応募一覧（締切が近い順）</h2>
+          <h2 class="section-title">応募一覧</h2>
+          <div class="view-tabs" role="tablist">
+            <button type="button" class="view-tab active" data-view="list" role="tab" aria-selected="true">一覧</button>
+            <button type="button" class="view-tab" data-view="calendar" role="tab" aria-selected="false">カレンダー</button>
+          </div>
           <span class="list-count" id="list-count"></span>
         </div>
-        <p id="empty-message" hidden>まだ応募が登録されていません。右上の「＋ 新規追加」から追加してください。</p>
-        <div id="internship-list" class="card-grid"></div>
+
+        <!-- 一覧表示(締切が近い順のカード) -->
+        <div id="list-view">
+          <p id="empty-message" hidden>まだ応募が登録されていません。右上の「＋ 新規追加」から追加してください。</p>
+          <div id="internship-list" class="card-grid"></div>
+        </div>
+
+        <!-- カレンダー表示(応募締切・面接日を月表示で確認できる) -->
+        <div id="calendar-view" hidden>
+          <div class="calendar-card">
+            <div class="calendar-header">
+              <button type="button" id="cal-prev" class="icon-btn" aria-label="前の月">‹</button>
+              <h3 id="calendar-month-label"></h3>
+              <button type="button" id="cal-next" class="icon-btn" aria-label="次の月">›</button>
+            </div>
+            <div class="calendar-weekdays">
+              <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+            </div>
+            <div id="calendar-grid" class="calendar-grid"></div>
+            <div class="calendar-legend">
+              <span class="legend-item"><span class="legend-dot deadline"></span>応募締切</span>
+              <span class="legend-item"><span class="legend-dot interview"></span>面接日</span>
+              <span class="legend-item"><span class="legend-dot soon"></span>締切間近(3日以内)</span>
+            </div>
+          </div>
+        </div>
       </section>
 
     </main>
@@ -98,6 +138,14 @@
           </div>
 
           <div class="form-row">
+            <label for="internship-type">インターン内容</label>
+            <input type="text" id="internship-type" placeholder="例）データ分析" list="type-suggestions">
+            <datalist id="type-suggestions"></datalist>
+          </div>
+        </div>
+
+        <div class="form-row-group">
+          <div class="form-row">
             <label for="status">選考状況</label>
             <select id="status">
               <option value="未応募">未応募</option>
@@ -109,18 +157,16 @@
               <option value="辞退">辞退</option>
             </select>
           </div>
-        </div>
 
-        <div class="form-row-group">
           <div class="form-row">
             <label for="deadline">応募締切</label>
             <input type="date" id="deadline" required>
           </div>
+        </div>
 
-          <div class="form-row">
-            <label for="interview-date">面接日</label>
-            <input type="date" id="interview-date">
-          </div>
+        <div class="form-row">
+          <label for="interview-date">面接日</label>
+          <input type="date" id="interview-date">
         </div>
 
         <div class="form-row">
@@ -136,7 +182,7 @@
     </form>
   </dialog>
 
-  <!-- グラフの棒にカーソルを合わせたときに出るツールチップ -->
+  <!-- グラフの棒/カレンダーの予定にカーソルを合わせたときに出るツールチップ -->
   <div id="chart-tooltip" class="chart-tooltip" role="tooltip" hidden></div>
 
   <!-- 実際の動き(JavaScript)を読み込む。bodyの最後に書くことでHTMLの読み込みを妨げない -->
