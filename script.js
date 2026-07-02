@@ -81,7 +81,265 @@ function migrateItem(item) {
     internshipType,
     infoSessionDate: item.infoSessionDate || "",
     internshipDate: item.internshipDate || "",
+    mypageUrl: item.mypageUrl || "",
+    mypageIdEnc: item.mypageIdEnc || null,
+    mypagePasswordEnc: item.mypagePasswordEnc || null,
   };
+}
+
+// ================================================
+// マイページのID・パスワードを暗号化して保存する仕組み
+//
+// この端末の中でしか使わない前提で、以下の方針にしている:
+// ・可能なら端末の生体認証(指紋/顔認証など)を使い、そこから暗号鍵を作る
+//   (WebAuthnのPRF拡張という仕組みを使う。対応ブラウザ/端末でのみ有効)
+// ・生体認証が使えない場合は、自分で決めた「パスコード」から暗号鍵を作る
+// ・どちらの方法でも、暗号鍵そのものは保存せず、毎回その場で作り直す
+// ・一度認証したら、しばらく(10分間)は再認証なしで閲覧・コピーできるようにする
+// ================================================
+
+const SECURITY_CONFIG_KEY = "internship-manager-security";
+const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 認証の有効時間(10分)
+
+// 復号した鍵は、ページを開いている間だけメモリ上に置く(保存はしない)
+let sessionCryptoKey = null;
+let sessionKeyExpiresAt = 0;
+
+// ---- 文字列 <-> バイナリ の変換ヘルパー ----
+function bufferToBase64(buffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+function base64ToBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// ---- 認証方法の設定を読み書きする(暗号鍵そのものは含まれない) ----
+function getSecurityConfig() {
+  const raw = localStorage.getItem(SECURITY_CONFIG_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+function saveSecurityConfig(config) {
+  localStorage.setItem(SECURITY_CONFIG_KEY, JSON.stringify(config));
+}
+
+// ---- WebAuthn(生体認証)で暗号鍵を作る ----
+// 対応していないブラウザ/端末では例外が発生するので、呼び出し側でフォールバックする
+async function createWebAuthnSecurity() {
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp: { name: "インターン応募管理" },
+      user: {
+        id: crypto.getRandomValues(new Uint8Array(16)),
+        name: "internship-manager-user",
+        displayName: "インターン応募管理",
+      },
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 },
+      ],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+      timeout: 60000,
+      extensions: { prf: {} },
+    },
+  });
+
+  const prfResult = credential.getClientExtensionResults().prf;
+  if (!prfResult || !prfResult.enabled) {
+    throw new Error("この端末・ブラウザは生体認証からの暗号鍵作成(PRF)に対応していません");
+  }
+
+  return {
+    method: "webauthn",
+    credentialId: bufferToBase64(credential.rawId),
+    salt: bufferToBase64(salt),
+  };
+}
+
+// 登録済みのWebAuthn認証情報を使って、生体認証を求めたうえで暗号鍵を取り出す
+async function getWebAuthnKey(config) {
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: [{ id: base64ToBuffer(config.credentialId), type: "public-key" }],
+      userVerification: "required",
+      timeout: 60000,
+      extensions: { prf: { eval: { first: base64ToBuffer(config.salt) } } },
+    },
+  });
+
+  const prfResult = assertion.getClientExtensionResults().prf;
+  if (!prfResult || !prfResult.results || !prfResult.results.first) {
+    throw new Error("生体認証からの暗号鍵の取得に失敗しました");
+  }
+
+  return crypto.subtle.importKey("raw", prfResult.results.first, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+// ---- パスコード(文字列)から暗号鍵を作る(生体認証が使えない場合の代替手段) ----
+async function derivePasscodeKey(passcode, saltBase64) {
+  const salt = base64ToBuffer(saltBase64);
+  const baseKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(passcode), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+// ---- AES-GCMでの暗号化・復号(毎回ランダムなIVを使うことで安全性を高める) ----
+async function encryptWithKey(key, plainText) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plainText));
+  return { iv: bufferToBase64(iv), data: bufferToBase64(data) };
+}
+async function decryptWithKey(key, encObj) {
+  const iv = base64ToBuffer(encObj.iv);
+  const data = base64ToBuffer(encObj.data);
+  const plainBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+  return new TextDecoder().decode(plainBuffer);
+}
+
+// ---- パスコードの入力・設定用モーダルをPromiseで扱えるようにする ----
+function askPasscode({ mode }) {
+  // mode: "setup"(新規設定・確認入力あり) または "unlock"(入力のみ)
+  return new Promise((resolve) => {
+    passcodeTitle.textContent = mode === "setup" ? "パスコードを設定" : "パスコードを入力";
+    passcodeDescription.textContent =
+      mode === "setup"
+        ? "マイページのID・パスワードを暗号化して保存するためのパスコードを設定してください。このパスコードはこの端末にしか保存されず、忘れると保存したパスワードは復元できません。"
+        : "マイページのID・パスワードを見るには、設定したパスコードを入力してください。";
+    passcodeConfirmRow.hidden = mode !== "setup";
+    passcodeSubmitBtn.textContent = mode === "setup" ? "設定する" : "解除する";
+    passcodeError.hidden = true;
+    passcodeInput.value = "";
+    passcodeConfirmInput.value = "";
+
+    const cleanup = () => {
+      passcodeForm.removeEventListener("submit", onSubmit);
+      passcodeCancelBtn.removeEventListener("click", onCancel);
+      passcodeCloseBtn.removeEventListener("click", onCancel);
+      passcodeModal.removeEventListener("close", onCancel);
+    };
+    const onCancel = () => {
+      cleanup();
+      if (passcodeModal.open) passcodeModal.close();
+      resolve(null);
+    };
+    const onSubmit = (event) => {
+      event.preventDefault();
+      const value = passcodeInput.value;
+      if (mode === "setup" && value !== passcodeConfirmInput.value) {
+        passcodeError.textContent = "パスコードが一致しません";
+        passcodeError.hidden = false;
+        return;
+      }
+      if (value.length < 4) {
+        passcodeError.textContent = "4文字以上で入力してください";
+        passcodeError.hidden = false;
+        return;
+      }
+      cleanup();
+      passcodeModal.close();
+      resolve(value);
+    };
+
+    passcodeForm.addEventListener("submit", onSubmit);
+    passcodeCancelBtn.addEventListener("click", onCancel);
+    passcodeCloseBtn.addEventListener("click", onCancel);
+    passcodeModal.addEventListener("close", onCancel, { once: true });
+
+    passcodeModal.showModal();
+    passcodeInput.focus();
+  });
+}
+
+// ---- 初回の認証方法セットアップ(生体認証を試し、ダメならパスコード) ----
+async function setupSecurity() {
+  if (window.PublicKeyCredential) {
+    try {
+      const config = await createWebAuthnSecurity();
+      saveSecurityConfig(config);
+      return getWebAuthnKey(config);
+    } catch (error) {
+      // 生体認証が使えない/キャンセルされた場合はパスコード方式にフォールバックする
+    }
+  }
+
+  const passcode = await askPasscode({ mode: "setup" });
+  if (passcode === null) return null; // キャンセルされた
+
+  const salt = bufferToBase64(crypto.getRandomValues(new Uint8Array(16)));
+  saveSecurityConfig({ method: "passcode", salt });
+  return derivePasscodeKey(passcode, salt);
+}
+
+// ---- 今すぐ使える暗号鍵を用意する(必要なら認証を求める。10分間はキャッシュを使う) ----
+async function ensureUnlocked() {
+  const now = Date.now();
+  if (sessionCryptoKey && now < sessionKeyExpiresAt) {
+    return sessionCryptoKey;
+  }
+
+  const config = getSecurityConfig();
+  let key;
+  if (!config) {
+    key = await setupSecurity();
+  } else if (config.method === "webauthn") {
+    try {
+      key = await getWebAuthnKey(config);
+    } catch (error) {
+      throw new Error("生体認証がキャンセルされたか失敗しました");
+    }
+  } else {
+    const passcode = await askPasscode({ mode: "unlock" });
+    if (passcode === null) return null;
+    key = await derivePasscodeKey(passcode, config.salt);
+  }
+
+  if (!key) return null;
+  sessionCryptoKey = key;
+  sessionKeyExpiresAt = now + SESSION_TIMEOUT_MS;
+  return key;
+}
+
+// ---- マイページのID・パスワードをまとめて暗号化/復号する ----
+async function encryptMypageField(plainText) {
+  if (!plainText) return null;
+  const key = await ensureUnlocked();
+  if (!key) return null;
+  return encryptWithKey(key, plainText);
+}
+async function decryptMypageField(encObj) {
+  if (!encObj) return "";
+  const key = await ensureUnlocked();
+  if (!key) throw new Error("認証が完了しませんでした");
+  try {
+    return await decryptWithKey(key, encObj);
+  } catch (error) {
+    // 復号に失敗した鍵(パスコード違いなど)をキャッシュしたままにしない。
+    // これをしないと、次にもう一度試したいときに再入力の機会がないまま失敗し続けてしまう
+    sessionCryptoKey = null;
+    sessionKeyExpiresAt = 0;
+    throw new Error("復号に失敗しました(パスコードが違う可能性があります)");
+  }
+}
+
+// ---- 画面右下に小さく出す通知(コピー完了など) ----
+let toastTimer = null;
+function showToast(message) {
+  toastEl.textContent = message;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.hidden = true;
+  }, 2000);
 }
 
 // 現在選択されている絞り込み条件("all"のときはすべて表示)
@@ -117,12 +375,32 @@ const interviewDateInput = document.getElementById("interview-date");
 const internshipDateInput = document.getElementById("internship-date");
 const memoInput = document.getElementById("memo");
 
+const mypageUrlInput = document.getElementById("mypage-url");
+const mypageIdInput = document.getElementById("mypage-id");
+const mypagePasswordInput = document.getElementById("mypage-password");
+const mypagePasswordToggleBtn = document.getElementById("mypage-password-toggle");
+const mypageLockNote = document.getElementById("mypage-lock-note");
+
 const formTitle = document.getElementById("form-title");
 const submitBtn = document.getElementById("submit-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 const closeModalBtn = document.getElementById("close-modal-btn");
 const openAddBtn = document.getElementById("open-add-btn");
 const formModal = document.getElementById("form-modal");
+
+const passcodeModal = document.getElementById("passcode-modal");
+const passcodeForm = document.getElementById("passcode-form");
+const passcodeTitle = document.getElementById("passcode-title");
+const passcodeDescription = document.getElementById("passcode-description");
+const passcodeInput = document.getElementById("passcode-input");
+const passcodeConfirmRow = document.getElementById("passcode-confirm-row");
+const passcodeConfirmInput = document.getElementById("passcode-confirm-input");
+const passcodeError = document.getElementById("passcode-error");
+const passcodeCancelBtn = document.getElementById("passcode-cancel-btn");
+const passcodeCloseBtn = document.getElementById("passcode-close-btn");
+const passcodeSubmitBtn = document.getElementById("passcode-submit-btn");
+
+const toastEl = document.getElementById("toast");
 
 const industryFilterSelect = document.getElementById("industry-filter");
 const typeFilterSelect = document.getElementById("type-filter");
@@ -725,6 +1003,13 @@ function createCard(item) {
       <div class="row"><span class="label">参加日</span><span>${item.internshipDate ? formatDate(item.internshipDate) : "未定"}</span></div>
       ${item.memo ? `<div class="card-memo">${escapeHtml(item.memo)}</div>` : ""}
     </div>
+    ${item.mypageUrl || item.mypageIdEnc || item.mypagePasswordEnc
+      ? `<div class="card-mypage-actions">
+          ${item.mypageUrl ? '<button class="btn mypage-open-btn">マイページへ移動</button>' : ""}
+          ${item.mypageIdEnc ? '<button class="btn mypage-copy-id-btn">IDをコピー</button>' : ""}
+          ${item.mypagePasswordEnc ? '<button class="btn mypage-copy-pw-btn">パスワードをコピー</button>' : ""}
+        </div>`
+      : ""}
     <div class="card-actions">
       <button class="btn edit-btn">編集</button>
       <button class="btn delete-btn">削除</button>
@@ -738,6 +1023,42 @@ function createCard(item) {
   // 削除ボタンが押されたら、このデータを削除する
   const deleteBtn = card.querySelector(".delete-btn");
   deleteBtn.addEventListener("click", () => deleteInternship(item.id));
+
+  // マイページへ移動(新しいタブで開く。URLはそのまま保存しているので暗号化の解除は不要)
+  const openBtn = card.querySelector(".mypage-open-btn");
+  if (openBtn) {
+    openBtn.addEventListener("click", () => {
+      window.open(item.mypageUrl, "_blank", "noopener,noreferrer");
+    });
+  }
+
+  // IDをコピー(認証してから復号し、クリップボードにコピーする)
+  const copyIdBtn = card.querySelector(".mypage-copy-id-btn");
+  if (copyIdBtn) {
+    copyIdBtn.addEventListener("click", async () => {
+      try {
+        const idText = await decryptMypageField(item.mypageIdEnc);
+        await navigator.clipboard.writeText(idText);
+        showToast("IDをコピーしました");
+      } catch (error) {
+        showToast(error.message || "コピーに失敗しました");
+      }
+    });
+  }
+
+  // パスワードをコピー(認証してから復号し、クリップボードにコピーする)
+  const copyPwBtn = card.querySelector(".mypage-copy-pw-btn");
+  if (copyPwBtn) {
+    copyPwBtn.addEventListener("click", async () => {
+      try {
+        const pwText = await decryptMypageField(item.mypagePasswordEnc);
+        await navigator.clipboard.writeText(pwText);
+        showToast("パスワードをコピーしました");
+      } catch (error) {
+        showToast(error.message || "コピーに失敗しました");
+      }
+    });
+  }
 
   return card;
 }
@@ -896,6 +1217,52 @@ calNextBtn.addEventListener("click", () => {
 });
 
 // ================================================
+// マイページのID・パスワード欄の状態管理
+// ================================================
+
+// 今フォームで編集中のデータ(暗号化されたID・パスワードを持っている場合、復号のために参照する)
+let currentEditingItem = null;
+
+// ID・パスワード欄がユーザーの入力によって変更されたかどうか
+// (「表示」ボタンによる復号表示では変更扱いにせず、実際にタイプ/削除したときだけtrueにする)
+let mypageIdChanged = false;
+let mypagePasswordChanged = false;
+mypageIdInput.addEventListener("input", () => { mypageIdChanged = true; });
+mypagePasswordInput.addEventListener("input", () => { mypagePasswordChanged = true; });
+
+// ID・パスワード欄の表示状態("none"=新規入力中, "masked"=保存済みで伏字, "revealed"=復号して表示中)
+let mypageRevealState = "none";
+
+mypagePasswordToggleBtn.addEventListener("click", async () => {
+  if (mypageRevealState === "masked") {
+    // 保存済みのID・パスワードを復号して表示する(ここで生体認証/パスコードを求める)
+    mypagePasswordToggleBtn.disabled = true;
+    try {
+      const idText = currentEditingItem?.mypageIdEnc ? await decryptMypageField(currentEditingItem.mypageIdEnc) : "";
+      const pwText = currentEditingItem?.mypagePasswordEnc ? await decryptMypageField(currentEditingItem.mypagePasswordEnc) : "";
+      mypageIdInput.value = idText;
+      mypagePasswordInput.value = pwText;
+      mypagePasswordInput.type = "text";
+      mypageRevealState = "revealed";
+      mypagePasswordToggleBtn.textContent = "隠す";
+    } catch (error) {
+      showToast(error.message || "表示に失敗しました");
+    } finally {
+      mypagePasswordToggleBtn.disabled = false;
+    }
+  } else if (mypageRevealState === "revealed") {
+    // 値はそのまま保持し、見た目だけ伏字に戻す
+    mypagePasswordInput.type = "password";
+    mypagePasswordToggleBtn.textContent = "表示";
+  } else {
+    // 新規入力中: 今タイプした文字を見せるだけ(暗号化・認証とは無関係)
+    const showing = mypagePasswordInput.type === "text";
+    mypagePasswordInput.type = showing ? "password" : "text";
+    mypagePasswordToggleBtn.textContent = showing ? "表示" : "隠す";
+  }
+});
+
+// ================================================
 // モーダル(追加・編集フォーム)の開閉
 // ================================================
 function openModalForAdd() {
@@ -920,13 +1287,20 @@ formModal.addEventListener("close", resetForm);
 // ================================================
 
 // フォームが送信された(追加ボタン or 更新ボタンが押された)ときの処理
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   // フォーム送信によるページの再読み込みを止める
   event.preventDefault();
 
-  const internships = loadInternships();
+  // 暗号化の認証待ちの間に、二重に送信されてしまわないようにする
+  if (submitBtn.disabled) return;
+  submitBtn.disabled = true;
 
-  // フォームの内容をまとめる
+  const internships = loadInternships();
+  const targetId = editIdInput.value;
+  const existingItem = targetId ? internships.find((item) => item.id === targetId) : null;
+
+  // 暗号化には時間がかかることがある(生体認証やパスコード入力を待つため)。
+  // その間にフォームの内容が変わっても影響を受けないよう、先に値をすべて読み取っておく
   const formData = {
     company: companyInput.value.trim(),
     industry: industryInput.value.trim(),
@@ -937,11 +1311,30 @@ form.addEventListener("submit", (event) => {
     interviewDate: interviewDateInput.value,
     internshipDate: internshipDateInput.value,
     memo: memoInput.value.trim(),
+    mypageUrl: mypageUrlInput.value.trim(),
+    mypageIdEnc: existingItem ? existingItem.mypageIdEnc : null,
+    mypagePasswordEnc: existingItem ? existingItem.mypagePasswordEnc : null,
   };
+  const rawMypageId = mypageIdInput.value;
+  const rawMypagePassword = mypagePasswordInput.value;
 
-  if (editIdInput.value) {
+  // ID・パスワードは「実際に変更された時だけ」暗号化し直す。
+  // 触っていなければ、既存の暗号化データをそのまま引き継ぐ(無駄な認証を求めないため)
+  try {
+    if (mypageIdChanged) {
+      formData.mypageIdEnc = await encryptMypageField(rawMypageId);
+    }
+    if (mypagePasswordChanged) {
+      formData.mypagePasswordEnc = await encryptMypageField(rawMypagePassword);
+    }
+  } catch (error) {
+    showToast("マイページ情報の暗号化に失敗しました");
+    submitBtn.disabled = false;
+    return;
+  }
+
+  if (targetId) {
     // 隠しフィールドにIDが入っている = 編集モード
-    const targetId = editIdInput.value;
     const index = internships.findIndex((item) => item.id === targetId);
     if (index !== -1) {
       internships[index] = { id: targetId, ...formData };
@@ -957,6 +1350,7 @@ form.addEventListener("submit", (event) => {
 
   saveInternships(internships);
   renderAll();
+  submitBtn.disabled = false;
   closeModal();
 });
 
@@ -976,6 +1370,26 @@ function startEdit(id) {
   interviewDateInput.value = item.interviewDate;
   internshipDateInput.value = item.internshipDate;
   memoInput.value = item.memo;
+
+  mypageUrlInput.value = item.mypageUrl || "";
+  currentEditingItem = item;
+  mypageIdChanged = false;
+  mypagePasswordChanged = false;
+  mypagePasswordInput.type = "password";
+  const hasCredentials = Boolean(item.mypageIdEnc || item.mypagePasswordEnc);
+  if (hasCredentials) {
+    // 実際のID・パスワードはまだ復号しない。伏字を見せておき、「表示」ボタンで初めて認証・復号する
+    mypageIdInput.value = "••••••••";
+    mypagePasswordInput.value = "••••••••";
+    mypageRevealState = "masked";
+    mypageLockNote.textContent = "保存済み(表示ボタンで確認・変更できます)";
+    mypagePasswordToggleBtn.textContent = "表示";
+  } else {
+    mypageIdInput.value = "";
+    mypagePasswordInput.value = "";
+    mypageRevealState = "none";
+    mypageLockNote.textContent = "";
+  }
 
   // フォームの見た目を「編集モード」に切り替える
   formTitle.textContent = "応募内容を編集";
@@ -1001,6 +1415,14 @@ function resetForm() {
   form.reset();
   editIdInput.value = "";
   statusInput.value = "未応募"; // 選考状況の初期値
+
+  currentEditingItem = null;
+  mypageIdChanged = false;
+  mypagePasswordChanged = false;
+  mypageRevealState = "none";
+  mypageLockNote.textContent = "";
+  mypagePasswordInput.type = "password";
+  mypagePasswordToggleBtn.textContent = "表示";
 
   formTitle.textContent = "新しい応募を追加";
   submitBtn.textContent = "追加する";

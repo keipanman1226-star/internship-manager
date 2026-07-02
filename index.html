@@ -241,6 +241,34 @@
           <label for="memo">メモ</label>
           <textarea id="memo" rows="3" placeholder="持ち物、対策メモなど"></textarea>
         </div>
+
+        <!-- マイページ情報(任意)。ID・パスワードは保存時に暗号化される -->
+        <div class="mypage-section">
+          <div class="mypage-section-header">
+            <span class="mypage-section-title">マイページ情報(任意)</span>
+            <span class="mypage-lock-note" id="mypage-lock-note"></span>
+          </div>
+
+          <div class="form-row">
+            <label for="mypage-url">マイページURL</label>
+            <input type="url" id="mypage-url" placeholder="https://mypage.example.com">
+          </div>
+
+          <div class="form-row-group">
+            <div class="form-row">
+              <label for="mypage-id">マイページID</label>
+              <input type="text" id="mypage-id" autocomplete="off" placeholder="例）abcd1234">
+            </div>
+            <div class="form-row">
+              <label for="mypage-password">マイページパスワード</label>
+              <div class="password-input-row">
+                <input type="password" id="mypage-password" autocomplete="off" placeholder="例）********">
+                <button type="button" id="mypage-password-toggle" class="icon-btn" aria-label="パスワードを表示">表示</button>
+              </div>
+            </div>
+          </div>
+          <p class="mypage-hint">保存すると暗号化され、閲覧時のみ認証(生体認証またはパスコード)で復号します。</p>
+        </div>
       </div>
 
       <div class="modal-footer">
@@ -249,6 +277,38 @@
       </div>
     </form>
   </dialog>
+
+  <!-- ===== ロック解除用モーダル(パスコードの設定・入力に使用) ===== -->
+  <dialog id="passcode-modal">
+    <form id="passcode-form">
+      <div class="modal-header">
+        <h2 id="passcode-title">パスコードを設定</h2>
+        <button type="button" id="passcode-close-btn" class="icon-btn" aria-label="閉じる">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="mypage-hint" id="passcode-description">
+          マイページのID・パスワードを暗号化して保存するためのパスコードを設定してください。
+          このパスコードはこの端末にしか保存されず、忘れると保存したパスワードは復元できません。
+        </p>
+        <div class="form-row">
+          <label for="passcode-input">パスコード(4文字以上)</label>
+          <input type="password" id="passcode-input" autocomplete="off" minlength="4" required>
+        </div>
+        <div class="form-row" id="passcode-confirm-row">
+          <label for="passcode-confirm-input">パスコード(確認)</label>
+          <input type="password" id="passcode-confirm-input" autocomplete="off" minlength="4">
+        </div>
+        <p class="mypage-error" id="passcode-error" hidden></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="passcode-cancel-btn" class="btn btn-secondary">キャンセル</button>
+        <button type="submit" id="passcode-submit-btn" class="btn btn-primary">設定する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- コピー完了などの小さな通知 -->
+  <div id="toast" class="toast" hidden></div>
 
   <!-- 実際の動き(JavaScript)を読み込む。bodyの最後に書くことでHTMLの読み込みを妨げない -->
   <script src="script.js"></script>
