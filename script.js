@@ -390,6 +390,42 @@ function showToast(message) {
   }, 2000);
 }
 
+// ---- クリップボードへのコピー(スマホのブラウザでも極力成功するよう、何段階かの方法を試す) ----
+//
+// 生体認証やパスコード入力に時間がかかると、ブラウザが「ユーザーが今まさに操作した」と
+// 認識する有効期限が切れてしまい、特にスマホのブラウザでは navigator.clipboard による
+// コピーが黙って失敗することがある。そのため、失敗したら別の方法に切り替える。
+async function copyTextToClipboard(text) {
+  // 方法1: 標準のClipboard API
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    // 失敗しても諦めず、次の方法を試す
+  }
+
+  // 方法2: 古いブラウザでも動く方法(見えない入力欄を作って選択し、コピーする)
+  try {
+    const tempInput = document.createElement("input");
+    tempInput.value = text;
+    tempInput.readOnly = true;
+    tempInput.style.position = "fixed";
+    tempInput.style.top = "-1000px";
+    tempInput.style.opacity = "0";
+    document.body.appendChild(tempInput);
+    tempInput.focus();
+    tempInput.select();
+    tempInput.setSelectionRange(0, text.length);
+    const succeeded = document.execCommand("copy");
+    document.body.removeChild(tempInput);
+    if (succeeded) return true;
+  } catch (error) {
+    // それでもダメなら次へ
+  }
+
+  return false;
+}
+
 // 現在選択されている絞り込み条件("all"のときはすべて表示)
 let currentIndustryFilter = "all";
 let currentTypeFilter = "all";
@@ -1122,8 +1158,13 @@ function createCard(item) {
     copyIdBtn.addEventListener("click", async () => {
       try {
         const idText = await decryptMypageField(item.mypageIdEnc);
-        await navigator.clipboard.writeText(idText);
-        showToast("IDをコピーしました");
+        const copied = await copyTextToClipboard(idText);
+        if (copied) {
+          showToast("IDをコピーしました");
+        } else {
+          // 自動コピーに失敗した場合の最終手段: ダイアログに表示し、手動でコピーしてもらう
+          window.prompt("コピーできませんでした。下の内容を選択してコピーしてください", idText);
+        }
       } catch (error) {
         showToast(error.message || "コピーに失敗しました");
       }
@@ -1136,8 +1177,12 @@ function createCard(item) {
     copyPwBtn.addEventListener("click", async () => {
       try {
         const pwText = await decryptMypageField(item.mypagePasswordEnc);
-        await navigator.clipboard.writeText(pwText);
-        showToast("パスワードをコピーしました");
+        const copied = await copyTextToClipboard(pwText);
+        if (copied) {
+          showToast("パスワードをコピーしました");
+        } else {
+          window.prompt("コピーできませんでした。下の内容を選択してコピーしてください", pwText);
+        }
       } catch (error) {
         showToast(error.message || "コピーに失敗しました");
       }
