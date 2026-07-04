@@ -570,8 +570,9 @@ textarea:focus {
   color: var(--text-muted);
 }
 
-/* ---- 一覧/カレンダーの切り替えタブ ---- */
-.view-tabs {
+/* ---- 一覧/カレンダーの切り替えタブ、および月表示/週表示の切り替え(見た目は共通) ---- */
+.view-tabs,
+.calendar-mode-toggle {
   display: inline-flex;
   background-color: var(--gridline);
   border-radius: var(--radius-sm);
@@ -579,7 +580,8 @@ textarea:focus {
   gap: 2px;
 }
 
-.view-tab {
+.view-tab,
+.calendar-mode-btn {
   border: none;
   background: transparent;
   padding: 6px 14px;
@@ -591,7 +593,8 @@ textarea:focus {
   font-family: inherit;
 }
 
-.view-tab.active {
+.view-tab.active,
+.calendar-mode-btn.active {
   background-color: var(--surface);
   color: var(--accent);
   box-shadow: var(--shadow-sm);
@@ -783,6 +786,11 @@ textarea:focus {
   text-align: center;
 }
 
+.calendar-mode-toggle {
+  justify-content: center;
+  margin: 0 auto 8px;
+}
+
 .calendar-hint {
   text-align: center;
   font-size: 0.74rem;
@@ -803,6 +811,11 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+}
+
+/* 週表示は1週間分しかマスがないので、その分たっぷり高さをとって予定を見やすくする */
+.calendar-grid.week-mode .calendar-cell {
+  min-height: 160px;
 }
 
 .calendar-cell {
@@ -842,6 +855,8 @@ textarea:focus {
 .calendar-chip {
   display: block;
   width: 100%;
+  min-height: 16px; /* インターン期間の帯はラベルが空になることがあるため、その時も高さが潰れないようにする */
+  box-sizing: border-box;
   border: none;
   border-radius: 5px;
   padding: 2px 5px;
@@ -871,9 +886,24 @@ textarea:focus {
 }
 
 .calendar-chip.internship-date,
-.calendar-chip.internshipDate {
+.calendar-chip.internshipDate,
+.calendar-chip.internshipRange {
   background-color: #fce7dc;
   color: var(--status-最終面接);
+}
+
+/* インターン参加期間は複数日にまたがるので、続きであることが分かるように
+   区切りの角だけを丸めず、週の行の中で1本の帯につながって見えるようにする */
+.calendar-chip.range-start {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.calendar-chip.range-end {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.calendar-chip.range-middle {
+  border-radius: 0;
 }
 
 .calendar-chip.soon {
@@ -1177,6 +1207,10 @@ form#event-form {
     padding: 3px;
   }
 
+  .calendar-grid.week-mode .calendar-cell {
+    min-height: 110px;
+  }
+
   .calendar-day-number {
     font-size: 0.68rem;
   }
@@ -1184,6 +1218,7 @@ form#event-form {
   .calendar-chip {
     font-size: 0.56rem;
     padding: 1px 3px;
+    min-height: 12px;
   }
 
   .calendar-header h3 {

@@ -138,9 +138,13 @@
         <div id="calendar-view" hidden>
           <div class="calendar-card">
             <div class="calendar-header">
-              <button type="button" id="cal-prev" class="icon-btn" aria-label="前の月">‹</button>
+              <button type="button" id="cal-prev" class="icon-btn" aria-label="前へ">‹</button>
               <h3 id="calendar-month-label"></h3>
-              <button type="button" id="cal-next" class="icon-btn" aria-label="次の月">›</button>
+              <button type="button" id="cal-next" class="icon-btn" aria-label="次へ">›</button>
+            </div>
+            <div class="calendar-mode-toggle" role="tablist">
+              <button type="button" class="calendar-mode-btn active" data-mode="month" role="tab" aria-selected="true">月表示</button>
+              <button type="button" class="calendar-mode-btn" data-mode="week" role="tab" aria-selected="false">週表示</button>
             </div>
             <p class="calendar-hint">日付をタップすると予定を追加できます</p>
             <div class="calendar-weekdays">
@@ -151,7 +155,7 @@
               <span class="legend-item"><span class="legend-dot deadline"></span>応募締切</span>
               <span class="legend-item"><span class="legend-dot info-session"></span>説明会</span>
               <span class="legend-item"><span class="legend-dot interview"></span>面接日</span>
-              <span class="legend-item"><span class="legend-dot internship-date"></span>参加日</span>
+              <span class="legend-item"><span class="legend-dot internship-date"></span>インターン参加期間</span>
               <span class="legend-item"><span class="legend-dot soon"></span>締切間近(3日以内)</span>
             </div>
             <div class="calendar-legend">
@@ -243,8 +247,19 @@
         </div>
 
         <div class="form-row">
-          <label for="internship-date">インターン参加日</label>
-          <input type="date" id="internship-date">
+          <label for="internship-name">インターン名(任意)</label>
+          <input type="text" id="internship-name" placeholder="例）サマーインターン2026">
+        </div>
+
+        <div class="form-row-group">
+          <div class="form-row">
+            <label for="internship-start-date">参加開始日</label>
+            <input type="date" id="internship-start-date">
+          </div>
+          <div class="form-row">
+            <label for="internship-end-date">参加終了日</label>
+            <input type="date" id="internship-end-date">
+          </div>
         </div>
 
         <div class="form-row">

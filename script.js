@@ -97,16 +97,42 @@ function migrateItem(item) {
     ? rawType
     : TYPE_MIGRATION_MAP[rawType] || "その他";
 
+  // 旧バージョンでは「インターン参加日」が1日分(internshipDate)しかなかった。
+  // 新バージョンでは開始日・終了日を持つので、旧データは「1日だけの期間」として引き継ぐ
+  const { internshipDate, ...rest } = item;
+  const internshipStartDate = item.internshipStartDate || internshipDate || "";
+  const internshipEndDate = item.internshipEndDate || internshipDate || internshipStartDate || "";
+
   return {
-    ...item,
+    ...rest,
     status,
     internshipType,
     infoSessionDate: item.infoSessionDate || "",
-    internshipDate: item.internshipDate || "",
+    internshipName: item.internshipName || "",
+    internshipStartDate,
+    internshipEndDate,
     mypageUrl: item.mypageUrl || "",
     mypageIdEnc: item.mypageIdEnc || null,
     mypagePasswordEnc: item.mypagePasswordEnc || null,
   };
+}
+
+// 応募データから「インターン参加期間」を取り出す共通ヘルパー。
+// 終了日が未入力なら開始日と同じ(1日だけ)とみなす。期間が設定されていなければnullを返す
+function getInternshipRange(item) {
+  const start = item.internshipStartDate;
+  if (!start) return null;
+  let end = item.internshipEndDate || start;
+  if (end < start) end = start; // 終了日が開始日より前という誤入力を防ぐ
+  return { start, end };
+}
+
+// 指定した日付を含む週の日曜日を返す(週表示カレンダーの起点を求めるために使う)
+function getWeekStart(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
 }
 
 // ================================================
@@ -380,6 +406,10 @@ let calendarMonth = (() => {
   return d;
 })();
 
+// カレンダーの表示モード("month"=月表示 / "week"=週表示)と、週表示のときの起点(その週の日曜日)
+let calendarViewMode = "month";
+let calendarWeekStart = getWeekStart(new Date());
+
 // 直前にrenderAll()で計算した絞り込み済みデータ(月を切り替えるときに再利用する)
 let lastFilteredItems = [];
 
@@ -394,7 +424,9 @@ const deadlineInput = document.getElementById("deadline");
 const statusInput = document.getElementById("status");
 const infoSessionDateInput = document.getElementById("info-session-date");
 const interviewDateInput = document.getElementById("interview-date");
-const internshipDateInput = document.getElementById("internship-date");
+const internshipNameInput = document.getElementById("internship-name");
+const internshipStartDateInput = document.getElementById("internship-start-date");
+const internshipEndDateInput = document.getElementById("internship-end-date");
 const memoInput = document.getElementById("memo");
 
 const mypageUrlInput = document.getElementById("mypage-url");
@@ -460,6 +492,7 @@ const calPrevBtn = document.getElementById("cal-prev");
 const calNextBtn = document.getElementById("cal-next");
 const calendarMonthLabel = document.getElementById("calendar-month-label");
 const calendarGrid = document.getElementById("calendar-grid");
+const calendarModeBtns = document.querySelectorAll(".calendar-mode-btn");
 
 // ================================================
 // localStorage とのやりとりをする関数
@@ -662,7 +695,6 @@ const AGENDA_KIND_PHRASES = {
   deadline: "インターン応募締切",
   infoSession: "説明会",
   interview: "面接",
-  internshipDate: "インターン参加",
 };
 
 function renderAgenda(items) {
@@ -672,16 +704,28 @@ function renderAgenda(items) {
       ["deadline", item.deadline],
       ["infoSession", item.infoSessionDate],
       ["interview", item.interviewDate],
-      ["internshipDate", item.internshipDate],
     ].forEach(([kind, dateString]) => {
       const days = getDaysUntil(dateString);
       if (days !== null && days >= 0 && days <= 7) {
-        entries.push({ kind, dateString, days, item });
+        entries.push({ kind, days, item });
       }
     });
+
+    // インターン参加期間は「開始日までの残り日数」か「すでに参加期間中かどうか」で判定する
+    // (単純な1日の予定と違い、開始日〜終了日のどこかに今日が入っていれば「参加中」として目立たせたい)
+    const range = getInternshipRange(item);
+    if (range) {
+      const startDays = getDaysUntil(range.start);
+      const endDays = getDaysUntil(range.end);
+      const ongoing = startDays <= 0 && endDays >= 0;
+      const upcoming = startDays > 0 && startDays <= 7;
+      if (ongoing || upcoming) {
+        entries.push({ kind: "internshipRange", days: ongoing ? 0 : startDays, ongoing, item });
+      }
+    }
   });
 
-  // 残り日数が少ない(=締切が近い)順に並べる
+  // 残り日数が少ない(=締切・開始が近い)順に並べる
   entries.sort((a, b) => a.days - b.days);
 
   agendaList.innerHTML = "";
@@ -691,14 +735,15 @@ function renderAgenda(items) {
     return;
   }
 
-  entries.forEach(({ kind, days, item }) => {
+  entries.forEach(({ kind, days, ongoing, item }) => {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "agenda-row";
 
     const dayBadge = document.createElement("span");
-    dayBadge.className = `agenda-day-badge ${urgencyClass(days)}`;
-    dayBadge.textContent = formatDaysLabel(days);
+    // 今日がインターン参加期間中の場合は、日数バッジの代わりに「本日参加中」を出して一番目立たせる
+    dayBadge.className = `agenda-day-badge ${ongoing ? "urgent-critical" : urgencyClass(days)}`;
+    dayBadge.textContent = ongoing ? "本日参加中" : formatDaysLabel(days);
 
     // 例:「〇〇株式会社 インターン応募締切まであと3日」の「まであと◯日」を除いた部分をここに表示する
     // (残り日数はすでに左のバッジで強調しているため)
@@ -707,7 +752,8 @@ function renderAgenda(items) {
     const strong = document.createElement("strong");
     strong.textContent = item.company;
     textEl.appendChild(strong);
-    textEl.appendChild(document.createTextNode(` ${AGENDA_KIND_PHRASES[kind]}`));
+    const phrase = kind === "internshipRange" ? `${item.internshipName || "インターン"}参加` : AGENDA_KIND_PHRASES[kind];
+    textEl.appendChild(document.createTextNode(` ${phrase}`));
 
     row.appendChild(dayBadge);
     row.appendChild(textEl);
@@ -1019,6 +1065,13 @@ function createCard(item) {
   }
 
   // 企業名や締切、選考状況バッジなどを表示する部分
+  const range = getInternshipRange(item);
+  const rangeText = range
+    ? range.start === range.end
+      ? formatDate(range.start)
+      : `${formatDate(range.start)} 〜 ${formatDate(range.end)}`
+    : "未定";
+
   card.innerHTML = `
     <div class="card-header">
       <h3>${escapeHtml(item.company)}</h3>
@@ -1030,7 +1083,8 @@ function createCard(item) {
       <div class="row"><span class="label">応募締切</span><span>${formatDate(item.deadline)} <span class="deadline-pill ${pillClass}">${formatDaysLabel(days)}</span></span></div>
       <div class="row"><span class="label">説明会</span><span>${item.infoSessionDate ? formatDate(item.infoSessionDate) : "未定"}</span></div>
       <div class="row"><span class="label">面接日</span><span>${item.interviewDate ? formatDate(item.interviewDate) : "未定"}</span></div>
-      <div class="row"><span class="label">参加日</span><span>${item.internshipDate ? formatDate(item.internshipDate) : "未定"}</span></div>
+      ${item.internshipName ? `<div class="row"><span class="label">インターン名</span><span>${escapeHtml(item.internshipName)}</span></div>` : ""}
+      <div class="row"><span class="label">参加期間</span><span>${rangeText}</span></div>
       ${item.memo ? `<div class="card-memo">${escapeHtml(item.memo)}</div>` : ""}
     </div>
     ${item.mypageUrl || item.mypageIdEnc || item.mypagePasswordEnc
@@ -1148,40 +1202,152 @@ const CALENDAR_KIND_LABELS = {
   deadline: "締切",
   infoSession: "説明会",
   interview: "面接",
-  internshipDate: "参加",
 };
 
-function renderCalendar(items) {
-  const year = calendarMonth.getFullYear();
-  const month = calendarMonth.getMonth(); // 0始まり(0=1月)
-
-  calendarMonthLabel.textContent = `${year}年${month + 1}月`;
-
-  // 日付(YYYY-MM-DD文字列)ごとに、その日が締切/説明会/面接/参加日になっている案件と、
-  // 自分で自由に登録した予定をまとめておく
+// 日付(YYYY-MM-DD文字列)ごとに、その日が締切/説明会/面接になっている案件・
+// インターン参加期間中の日・自分で自由に登録した予定をまとめる(月表示/週表示の両方で共通利用)
+function buildEventsByDate(items) {
   const eventsByDate = new Map();
   const addEvent = (dateKey, entry) => {
     if (!dateKey) return;
     if (!eventsByDate.has(dateKey)) eventsByDate.set(dateKey, []);
     eventsByDate.get(dateKey).push(entry);
   };
+
   items.forEach((item) => {
     addEvent(item.deadline, { type: "company", item, kind: "deadline" });
     if (item.infoSessionDate) addEvent(item.infoSessionDate, { type: "company", item, kind: "infoSession" });
     if (item.interviewDate) addEvent(item.interviewDate, { type: "company", item, kind: "interview" });
-    if (item.internshipDate) addEvent(item.internshipDate, { type: "company", item, kind: "internshipDate" });
+
+    // インターン参加期間は、開始日から終了日までの毎日にイベントを展開しておく
+    const range = getInternshipRange(item);
+    if (range) {
+      const start = new Date(range.start);
+      const end = new Date(range.end);
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dateKey = toDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+        addEvent(dateKey, {
+          type: "internshipRange",
+          item,
+          isFirst: d.getTime() === start.getTime(),
+          isLast: d.getTime() === end.getTime(),
+        });
+      }
+    }
   });
+
   loadCustomEvents().forEach((event) => {
     addEvent(event.date, { type: "custom", event });
   });
+
+  return eventsByDate;
+}
+
+// 1マス分のセルを作る共通処理(月表示/週表示の両方で使う)。
+// columnIndexは週の中で何列目か(0=日曜, 6=土曜)。行の端かどうかで、
+// インターン参加期間の帯を丸めるかどうかを判定するために使う。
+function buildCalendarCell({ day, dateKey, inMonth, isToday, columnIndex, eventsByDate, maxVisible }) {
+  const cellEl = document.createElement("div");
+  cellEl.className = "calendar-cell";
+  if (!inMonth) cellEl.classList.add("outside");
+  if (isToday) cellEl.classList.add("today");
+
+  const dayLabel = document.createElement("div");
+  dayLabel.className = "calendar-day-number";
+  dayLabel.textContent = day;
+  cellEl.appendChild(dayLabel);
+
+  const events = eventsByDate.get(dateKey) || [];
+  const isRowStart = columnIndex === 0;
+  const isRowEnd = columnIndex === 6;
+
+  events.slice(0, maxVisible).forEach((entry) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+
+    if (entry.type === "company") {
+      const { item, kind } = entry;
+      const days = kind === "deadline" ? getDaysUntil(item.deadline) : null;
+      const isSoon = kind === "deadline" && days !== null && days <= 3;
+      chip.className = `calendar-chip ${kind}` + (isSoon ? " soon" : "");
+      chip.textContent = `${CALENDAR_KIND_LABELS[kind]} ${item.company}`;
+      chip.title = `${item.company}(${CALENDAR_KIND_LABELS[kind]})`;
+      chip.addEventListener("click", (clickEvent) => {
+        clickEvent.stopPropagation(); // セルの「予定を追加」判定に伝わらないようにする
+        startEdit(item.id);
+      });
+    } else if (entry.type === "internshipRange") {
+      const { item, isFirst, isLast } = entry;
+      // 週の行の端では、期間が本当に続いていても一旦「区切り」として丸める
+      // (行をまたいだ帯の連続表示は行わない、Googleカレンダー等でも一般的な簡略化)
+      const roundLeft = isFirst || isRowStart;
+      const roundRight = isLast || isRowEnd;
+      let cornerClass = "";
+      if (!roundLeft && !roundRight) cornerClass = "range-middle";
+      else if (!roundLeft) cornerClass = "range-end";
+      else if (!roundRight) cornerClass = "range-start";
+      chip.className = `calendar-chip internshipRange ${cornerClass}`.trim();
+      // 企業名を表示するのは、期間の本当の初日か、行が変わって帯が新しく始まる場所だけにする
+      // (それ以外は色だけの帯にして「まだ続いている」ことを示す)
+      chip.textContent = roundLeft ? `参加 ${item.company}` : "";
+      chip.title = `${item.company}${item.internshipName ? `「${item.internshipName}」` : ""}のインターン参加期間`;
+      chip.addEventListener("click", (clickEvent) => {
+        clickEvent.stopPropagation();
+        startEdit(item.id);
+      });
+    } else {
+      const { event } = entry;
+      chip.className = `calendar-chip custom-event custom-${event.category}`;
+      chip.textContent = `${event.category} ${event.title}`;
+      chip.title = `${event.title}(${event.category})`;
+      chip.addEventListener("click", (clickEvent) => {
+        clickEvent.stopPropagation();
+        openEventModal({ event });
+      });
+    }
+
+    cellEl.appendChild(chip);
+  });
+  if (events.length > maxVisible) {
+    const more = document.createElement("div");
+    more.className = "calendar-more";
+    more.textContent = `+${events.length - maxVisible}件`;
+    cellEl.appendChild(more);
+  }
+
+  // 空いている場所(予定チップ以外)をタップすると、その日付で新しい予定を追加できる
+  cellEl.addEventListener("click", () => {
+    openEventModal({ dateKey });
+  });
+
+  return cellEl;
+}
+
+function renderCalendar(items) {
+  const eventsByDate = buildEventsByDate(items);
+  const today = getToday();
+  const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+
+  calendarGrid.classList.toggle("week-mode", calendarViewMode === "week");
+
+  if (calendarViewMode === "week") {
+    renderCalendarWeek(eventsByDate, todayKey);
+  } else {
+    renderCalendarMonth(eventsByDate, todayKey);
+  }
+}
+
+// ---- 月表示 ----
+function renderCalendarMonth(eventsByDate, todayKey) {
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth(); // 0始まり(0=1月)
+  calendarMonthLabel.textContent = `${year}年${month + 1}月`;
 
   // その月を含む週の日曜日から、6週間分(42マス)のカレンダーを作る
   const firstOfMonth = new Date(year, month, 1);
   const startWeekday = firstOfMonth.getDay(); // 0=日曜
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
-
-  const todayKey = toDateKey(getToday().getFullYear(), getToday().getMonth(), getToday().getDate());
 
   const cells = [];
   // 前月の余り日
@@ -1205,71 +1371,89 @@ function renderCalendar(items) {
   }
 
   calendarGrid.innerHTML = "";
-  cells.forEach((cell) => {
-    const cellEl = document.createElement("div");
-    cellEl.className = "calendar-cell";
-    if (!cell.inMonth) cellEl.classList.add("outside");
-    if (cell.dateKey === todayKey) cellEl.classList.add("today");
-
-    const dayLabel = document.createElement("div");
-    dayLabel.className = "calendar-day-number";
-    dayLabel.textContent = cell.day;
-    cellEl.appendChild(dayLabel);
-
-    const events = eventsByDate.get(cell.dateKey) || [];
-    const maxVisible = 2;
-    events.slice(0, maxVisible).forEach((entry) => {
-      const chip = document.createElement("button");
-      chip.type = "button";
-
-      if (entry.type === "company") {
-        const { item, kind } = entry;
-        const days = kind === "deadline" ? getDaysUntil(item.deadline) : null;
-        const isSoon = kind === "deadline" && days !== null && days <= 3;
-        chip.className = `calendar-chip ${kind}` + (isSoon ? " soon" : "");
-        chip.textContent = `${CALENDAR_KIND_LABELS[kind]} ${item.company}`;
-        chip.title = `${item.company}(${CALENDAR_KIND_LABELS[kind]})`;
-        chip.addEventListener("click", (clickEvent) => {
-          clickEvent.stopPropagation(); // セルの「予定を追加」判定に伝わらないようにする
-          startEdit(item.id);
-        });
-      } else {
-        const { event } = entry;
-        chip.className = `calendar-chip custom-event custom-${event.category}`;
-        chip.textContent = `${event.category} ${event.title}`;
-        chip.title = `${event.title}(${event.category})`;
-        chip.addEventListener("click", (clickEvent) => {
-          clickEvent.stopPropagation();
-          openEventModal({ event });
-        });
-      }
-
-      cellEl.appendChild(chip);
+  cells.forEach((cell, index) => {
+    const cellEl = buildCalendarCell({
+      day: cell.day,
+      dateKey: cell.dateKey,
+      inMonth: cell.inMonth,
+      isToday: cell.dateKey === todayKey,
+      columnIndex: index % 7,
+      eventsByDate,
+      maxVisible: 2,
     });
-    if (events.length > maxVisible) {
-      const more = document.createElement("div");
-      more.className = "calendar-more";
-      more.textContent = `+${events.length - maxVisible}件`;
-      cellEl.appendChild(more);
-    }
-
-    // 空いている場所(予定チップ以外)をタップすると、その日付で新しい予定を追加できる
-    cellEl.addEventListener("click", () => {
-      openEventModal({ dateKey: cell.dateKey });
-    });
-
     calendarGrid.appendChild(cellEl);
   });
 }
 
+// ---- 週表示 ----
+function renderCalendarWeek(eventsByDate, todayKey) {
+  const weekEnd = new Date(calendarWeekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const sameMonth = calendarWeekStart.getMonth() === weekEnd.getMonth();
+  calendarMonthLabel.textContent = sameMonth
+    ? `${calendarWeekStart.getFullYear()}年${calendarWeekStart.getMonth() + 1}月${calendarWeekStart.getDate()}日 〜 ${weekEnd.getDate()}日`
+    : `${calendarWeekStart.getMonth() + 1}月${calendarWeekStart.getDate()}日 〜 ${weekEnd.getMonth() + 1}月${weekEnd.getDate()}日`;
+
+  calendarGrid.innerHTML = "";
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(calendarWeekStart);
+    d.setDate(d.getDate() + i);
+    const dateKey = toDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    const cellEl = buildCalendarCell({
+      day: d.getDate(),
+      dateKey,
+      inMonth: true,
+      isToday: dateKey === todayKey,
+      columnIndex: i,
+      eventsByDate,
+      maxVisible: 6,
+    });
+    calendarGrid.appendChild(cellEl);
+  }
+}
+
 calPrevBtn.addEventListener("click", () => {
-  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  if (calendarViewMode === "week") {
+    calendarWeekStart = new Date(calendarWeekStart.getFullYear(), calendarWeekStart.getMonth(), calendarWeekStart.getDate() - 7);
+  } else {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  }
   renderCalendar(lastFilteredItems);
 });
 
 calNextBtn.addEventListener("click", () => {
-  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  if (calendarViewMode === "week") {
+    calendarWeekStart = new Date(calendarWeekStart.getFullYear(), calendarWeekStart.getMonth(), calendarWeekStart.getDate() + 7);
+  } else {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  }
   renderCalendar(lastFilteredItems);
+});
+
+// 月表示⇔週表示の切り替え
+calendarModeBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const newMode = btn.dataset.mode;
+    if (newMode === calendarViewMode) return;
+    calendarViewMode = newMode;
+
+    calendarModeBtns.forEach((b) => {
+      const isActive = b === btn;
+      b.classList.toggle("active", isActive);
+      b.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    const today = new Date();
+    if (calendarViewMode === "week") {
+      // 今表示している月が「今月」なら今日の週へ、そうでなければその月の最初の週へ移動する
+      const isCurrentMonthShown =
+        calendarMonth.getFullYear() === today.getFullYear() && calendarMonth.getMonth() === today.getMonth();
+      calendarWeekStart = getWeekStart(isCurrentMonthShown ? today : new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1));
+    } else {
+      calendarMonth = new Date(calendarWeekStart.getFullYear(), calendarWeekStart.getMonth(), 1);
+    }
+    renderCalendar(lastFilteredItems);
+  });
 });
 
 // ================================================
@@ -1431,7 +1615,9 @@ form.addEventListener("submit", async (event) => {
     status: statusInput.value,
     infoSessionDate: infoSessionDateInput.value,
     interviewDate: interviewDateInput.value,
-    internshipDate: internshipDateInput.value,
+    internshipName: internshipNameInput.value.trim(),
+    internshipStartDate: internshipStartDateInput.value,
+    internshipEndDate: internshipEndDateInput.value,
     memo: memoInput.value.trim(),
     mypageUrl: mypageUrlInput.value.trim(),
     mypageIdEnc: existingItem ? existingItem.mypageIdEnc : null,
@@ -1490,7 +1676,9 @@ function startEdit(id) {
   statusInput.value = item.status;
   infoSessionDateInput.value = item.infoSessionDate;
   interviewDateInput.value = item.interviewDate;
-  internshipDateInput.value = item.internshipDate;
+  internshipNameInput.value = item.internshipName || "";
+  internshipStartDateInput.value = item.internshipStartDate || "";
+  internshipEndDateInput.value = item.internshipEndDate || "";
   memoInput.value = item.memo;
 
   mypageUrlInput.value = item.mypageUrl || "";
